@@ -23,4 +23,4 @@ run build.bat or build.sh
 This will create a build directiory containing the box2d library and samples.    
 
 (Windows) Build the box2d solution in Release mode. This should create a box2d.lib file
-in the box2d/build/src/Release directory which is references in the dub.sdl file.
+in the box2d/build/src/Release directory which is referenced in the dub.sdl file.
