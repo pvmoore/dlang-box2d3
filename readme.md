@@ -7,7 +7,7 @@ A Dlang wrapper for Box2D 3.x.
 - Dlang compiler https://dlang.org/
 - Box2D 3.x (https://github.com/erincatto/box2d)
 - dlang-vulkan https://github.com/pvmoore/dlang-vulkan
-- dlanf common https://github.com/pvmoore/dlang-common
+- dlang common https://github.com/pvmoore/dlang-common
 - dlang logging https://github.com/pvmoore/dlang-logging
 - dlang maths https://github.com/pvmoore/dlang-maths
 
