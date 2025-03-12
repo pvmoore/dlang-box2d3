@@ -1,0 +1,11 @@
+{
+	"fileVersion": 1,
+	"versions": {
+		"common": "~master",
+		"fonts": "~master",
+		"logging": "~master",
+		"maths": "~master",
+		"resources": "~master",
+		"vulkan": "~master"
+	}
+}

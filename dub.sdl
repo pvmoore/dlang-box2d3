@@ -1,0 +1,45 @@
+
+name "box2d3"
+platforms "windows"
+
+buildType "debug" {
+	buildOptions "debugMode" "debugInfo" "stackStomping" "warningsAsErrors" #"alwaysStackFrame"
+}
+buildType "release" {
+	buildOptions "releaseMode" "optimize" "inline" "noBoundsCheck"
+}
+
+configuration "test" {
+	targetType "executable"
+	targetName "bin-test"
+
+	excludedSourceFiles "src/tests/test_vulkan.d" "src/tests/SDF2DShapes.d"
+}
+configuration "test_vulkan" {
+	targetType "executable"
+	targetName "bin-test"
+
+	dependency "fonts" version="~master"
+	dependency "resources" version="~master"
+	dependency "vulkan" version="~master"
+
+	excludedSourceFiles "src/tests/test.d"
+}
+configuration "library" {
+	targetType "library"
+	excludedSourceFiles "src/tests/*.d"
+}
+
+# box2d.lib
+lflags "/LIBPATH:box2d/build/src/Release"
+libs "box2d"
+
+# Windows user32.lib
+libs "user32"
+
+# local
+dependency "common" version="~master"
+dependency "logging" version="~master"
+dependency "maths" version="~master"
+
+# external
