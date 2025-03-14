@@ -25,11 +25,24 @@
             },
             "problemMatcher": []
         },
-         {
+        {
             "label": "**** Test Vulkan ****",
             "type": "shell",
             "windows": {
                 "command": "scripts/run_build.bat dmd debug test_vulkan",
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "**** Test Vulkan (Release) ****",
+            "type": "shell",
+            "windows": {
+                "command": "scripts/run_build.bat ldc2 release test_vulkan",
             },
             "group": "build",
             "presentation": {

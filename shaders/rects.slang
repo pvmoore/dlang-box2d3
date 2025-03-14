@@ -18,22 +18,30 @@ VSOutput vsmain(uint shapeType,
 {
     float clockwiseRadians = -anticlockwiseRadians;
     
-    //           Rotation                    Scale              Translation
-    //
-    // [cos(angle), -sin(angle), 0]   [size.x,      0, 0]   [1, 0, translation.x]
-    // [sin(angle),  cos(angle), 0] x [     0, size.y, 0] x [0, 1, translation.y]
-    // [         0,           0, 1]   [     0,      0, 1]   [0, 0, 1            ]
-    //
-    let modelTransform:float3x3 = {
-        size.x * cos(clockwiseRadians), size.x * -sin(clockwiseRadians), translation.x, 
-        size.y * sin(clockwiseRadians), size.y * cos(clockwiseRadians),  translation.y,
-        0,                      0,                       1
-    };
+    let rotationMatrix = float3x3(
+        cos(clockwiseRadians), -sin(clockwiseRadians), 0,
+        sin(clockwiseRadians), cos(clockwiseRadians), 0,
+        0, 0, 1
+    );
 
-    float3 worldPos = mul(modelTransform, float3(modelPos, 1));
+    let scaleMatrix = float3x3(
+        size.x, 0, 0,
+        0, size.y, 0,
+        0, 0, 1
+    );
+    let translationMatrix = float3x3(
+        1, 0, translation.x,
+        0, 1, translation.y,
+        0, 0, 1
+    );
+
+    float3 p1 = mul(scaleMatrix, float3(modelPos, 1));
+    float3 p2 = mul(rotationMatrix, p1);
+    float3 worldPos = mul(translationMatrix, p2);
+
     float4 ndcPos = mul(ubo.viewProj, float4(worldPos, 1));
 
-    return VSOutput(shapeType, ndcPos, modelPos, innerColour, outerColour, vmin(size));
+    return VSOutput(shapeType, ndcPos, modelPos, innerColour, outerColour, size);
 }
 
 struct VSOutput {
@@ -42,7 +50,7 @@ struct VSOutput {
     float2 modelPos;
     float4 innerColour;
     float4 outerColour;
-    float size;
+    float2 size;
 };
 
 groupshared uint lock;
@@ -55,21 +63,32 @@ float4 fsmain(VSOutput input) : SV_TARGET {
     // each shape but this will be fine for now
     float dist;
     switch(input.shapeType) {
-        case 0: dist = sdfBox(input.modelPos, float2(0.5)) * 300; break;
-        case 1: dist = sdfCircle(input.modelPos, 0.5) * 300; break;
+        case 0: dist = sdfBox(input.modelPos, float2(0.5)); break;
+        case 1: dist = sdfCircle(input.modelPos, 0.5); break;
+        case 2:
+            float2 ratio = float2(1, input.size.y / input.size.x);
+            float offset = (ratio.y - 1) * 0.5;
+            float2 p = input.modelPos * ratio;
+
+            dist = sdfCircle(p - float2(0, offset) , 0.5);
+            dist = min(dist, sdfCircle(p + float2(0, offset) , 0.5));
+            dist = min(dist, sdfBox(p, float2(0.5, offset)));
+            break;
     } 
 
     // negative dist = inside the shape
     // 0 = on the edge 
     // positive dist = outside the shape
 
-    if(dist > 0) discard;
+    if(dist > 0) {
+        discard;
+    }
     
     // Add the outer edge
-    float n = 100 / input.size;
+    float n = 100 / vmin(input.size);
     float edge = clamp(n*n*n*n, 5, 20);
 
-    dist = clamp(dist+edge, 0, 1);
+    dist = clamp(dist*300+edge, 0, 1);
 
     return lerp(input.innerColour, input.outerColour, dist);
 }

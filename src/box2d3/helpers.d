@@ -34,3 +34,26 @@ void dumpBodyShapes(b2BodyId bodyId) {
         log("polygon = %s", poly.toString(bodyId));
     }
 }
+
+//──────────────────────────────────────────────────────────────────────────────────────────────────
+b2Polygon b2MakeCapsule(b2Vec2 p1, b2Vec2 p2, float radius) {
+	b2Polygon shape;
+	shape.vertices[0] = p1;
+	shape.vertices[1] = p2;
+	shape.centroid = b2Lerp( p1, p2, 0.5f );
+
+	b2Vec2 d = b2Sub( p2, p1 );
+	assert( b2LengthSquared( d ) > FLT_EPSILON );
+	b2Vec2 axis = b2Normalize( d );
+	b2Vec2 normal = b2RightPerp( axis );
+
+	shape.normals[0] = normal;
+	shape.normals[1] = b2Neg( normal );
+	shape.count = 2;
+	shape.radius = radius;
+
+	return shape;
+}
+b2Vec2 b2Normalize(b2Vec2 v) {
+    return v.as!float2.normalised().as!b2Vec2;
+}

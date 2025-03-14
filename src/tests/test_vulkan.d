@@ -12,7 +12,7 @@ import std.random : uniform;
 import std.datetime.stopwatch : StopWatch, AutoStart;
 
 import box2d3;
-import tests.SDF2DShapes;
+import tests.ShapeRenderer;
 
 extern(Windows)
 int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int iCmdShow) {
@@ -43,8 +43,12 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int i
 
 final class Box2d3Demo : VulkanApplication {
 public:
-    enum WIDTH  = 1800;
-    enum HEIGHT = 1200;
+    enum { 
+        WIDTH            = 1800,
+        HEIGHT           = 1200,
+        SIMULATION_SPEED = 1.0 * 0.15,
+        SIMULATION_STEPS = 4
+    }
 
     this() {
         enum NAME = "Box3D 3 Demo";
@@ -85,7 +89,7 @@ public:
             b2DestroyWorld(worldId);
 
             if(context) context.dumpMemory();
-            if(sdfShapes) sdfShapes.destroy();
+            if(shapeRenderer) shapeRenderer.destroy();
             if(sampler) device.destroySampler(sampler);
             if(renderPass) device.destroyRenderPass(renderPass);
             if(context) context.destroy();
@@ -127,7 +131,7 @@ public:
             //VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS
         );
 
-        sdfShapes.insideRenderPass(frame);
+        shapeRenderer.insideRenderPass(frame);
         
         b.endRenderPass();
         b.end();
@@ -151,9 +155,9 @@ private:
     VkClearValue bgColour;
     VkSampler sampler;
 
-    SDF2DShapes sdfShapes;
+    ShapeRenderer shapeRenderer;
 
-    enum ShapeType { RECTANGLE, CIRCLE }
+    enum ShapeType { RECTANGLE, CIRCLE, CAPSULE }
 
     static struct Entity {
         string name;
@@ -163,7 +167,7 @@ private:
         bool dynamic = false;
         float2 pos;
         float2 size;
-        Angle!float rotation = 0.degrees;
+        Angle!float rotationACW = 0.degrees;
         // Shape properties
         float density = 1.0;
         float friction = 0.6f;
@@ -173,7 +177,7 @@ private:
         RGBA outerColour;
 
         string toString() {
-            return format("'%s': pos=%s, size=%s, rot=%s", name, pos, size, rotation);
+            return format("'%s': pos=%s, size=%s, rot=%s", name, pos, size, rotationACW);
         }
     }
 
@@ -188,7 +192,7 @@ private:
             dynamic: false,
             pos: float2(WIDTH / 2, 70),
             size: float2(650.0f, 10.0f),
-            rotation: 0.degrees,
+            rotationACW: 0.degrees,
             innerColour: RGBA(1,1,0,1),
             outerColour: RGBA(1,1,1,1),
         };
@@ -197,8 +201,8 @@ private:
             type: ShapeType.RECTANGLE,
             dynamic: true,
             pos: float2(WIDTH / 2, 500.0f),
-            size: float2(40, 40),
-            rotation: 40.degrees,
+            size: float2(40, 40),   // half width, half height
+            rotationACW: 25.degrees,
             innerColour: RGBA(0,1,0,1),
             outerColour: RGBA(1,1,1,1),
         };
@@ -206,12 +210,22 @@ private:
             name: "Falling circle",
             type: ShapeType.CIRCLE,
             dynamic: true,
-            pos: float2(WIDTH / 2 + 100, 600.0f),
-            size: float2(40, 40),
-            rotation: 0.degrees,
+            pos: float2(WIDTH / 2 + 200, 600.0f),
+            size: float2(40, 40),   // radius, unused
+            rotationACW: 0.degrees,
             innerColour: RGBA(0,1,1,1),
             outerColour: RGBA(1,1,1,1),
         };
+    Entity fallingCapsule = {
+            name: "Falling capsule",
+            type: ShapeType.CAPSULE,
+            dynamic: true,
+            pos: float2(WIDTH / 2 - 300, 600.0f),
+            size: float2(50, 100),  // radius, half height
+            rotationACW: 20.degrees,
+            innerColour: RGBA(0,1,1,1),
+            outerColour: RGBA(1,1,1,1),
+        };    
 
     void initScene() {
         this.camera = Camera2D.forVulkan(vk.windowSize);
@@ -246,8 +260,16 @@ private:
 
         createSampler();
 
-        this.sdfShapes = new SDF2DShapes(context, 1000)
+        this.shapeRenderer = new ShapeRenderer(context, 1000)
             .camera(camera);
+
+        static if(false) {
+            float2 pos = float2(200, 200);
+            float height = 150;
+            float radius = 100;
+
+            shapeRenderer.addCapsule(pos, height*2, radius*2, 0.degrees, RGBA(0,1,1,1), RGBA(1,1,1,1));    
+        }
 
         static if(false) {   
             foreach(i; 0..25) {
@@ -259,7 +281,7 @@ private:
                 RGBA outer = RGBA(1,1,1,1);
                 auto rotation = uniform(0,360).degrees;
 
-                this.sdfShapes.addRectangle(
+                this.shapeRenderer.addRectangle(
                     pos, 
                     float2(size, size), 
                     rotation, 
@@ -276,7 +298,7 @@ private:
                 RGBA outer = RGBA(1,1,1,1);
                 auto rotation = uniform(0,360).degrees;
 
-                this.sdfShapes.addCircle(
+                this.shapeRenderer.addCircle(
                     pos, 
                     size, 
                     rotation, 
@@ -312,6 +334,7 @@ private:
             subpassDependency2()//[dependency]
         );
     }
+    /** Create the Box2D scene */
     void createPhysicsScene() {
         this.worldId = createWorld((def) {
             def.gravity = b2Vec2(0.0f, -10.0f);
@@ -321,25 +344,28 @@ private:
         addShape(ground);
         addShape(fallingBox);
         addShape(fallingCircle);
+        addShape(fallingCapsule);
     }
 
+    /** Add a shape to the scene */
     void addShape(ref Entity e) {
-
-        // Make the render shape
+        
         auto screen = vk.windowSize().to!float;
         
-        // Make the Box2D rigid body
+        // Make the Box2D body
         b2BodyDef def = b2DefaultBodyDef();
         def.type = e.dynamic ? b2BodyType.b2_dynamicBody : b2BodyType.b2_staticBody;
         def.position = e.pos.as!b2Vec2;
-        def.rotation = b2ComputeCosSin(e.rotation.radians).as!b2Rot;
+        def.rotation = b2ComputeCosSin(e.rotationACW.radians).as!b2Rot;
         def.userData = &e;
 
         e.bodyId = b2CreateBody(worldId, &def);
 
+        // Make the Box2D shape
         b2ShapeDef shapeDef = b2DefaultShapeDef();
         shapeDef.density = e.density;
         shapeDef.friction = e.friction;
+
 
         if(e.type == ShapeType.CIRCLE) {
 
@@ -347,47 +373,69 @@ private:
 
             b2CreateCircleShape(e.bodyId, &shapeDef, &circle);
             
-            e.renderId = this.sdfShapes.addCircle(float2(e.pos.x, screen.y - e.pos.y), 
+            // Make the render shape
+            e.renderId = this.shapeRenderer.addCircle(float2(e.pos.x, screen.y - e.pos.y), 
                                                   e.size.x * 2, 
-                                                  e.rotation, 
+                                                  e.rotationACW, 
                                                   e.innerColour, 
                                                   e.outerColour);
-        } else {
+        } else if(e.type == ShapeType.RECTANGLE) {
             b2Polygon box = b2MakeBox(e.size.x, e.size.y);
 
             b2CreatePolygonShape(e.bodyId, &shapeDef, &box);
 
-            e.renderId = this.sdfShapes.addRectangle(float2(e.pos.x, screen.y - e.pos.y),  
+            // Make the render shape
+            e.renderId = this.shapeRenderer.addRectangle(float2(e.pos.x, screen.y - e.pos.y),  
                                                      e.size * 2, 
-                                                     e.rotation, 
+                                                     e.rotationACW, 
                                                      e.innerColour, 
                                                      e.outerColour);
+        } else {
+            float radius = e.size.x;
+            float height = e.size.y;
+            float h = height / 2;
+            float2 p1 = float2(0, -h);
+            float2 p2 = float2(0, h);
+
+            b2Polygon poly = b2MakeCapsule(p1.as!b2Vec2, p2.as!b2Vec2, radius);
+            b2CreatePolygonShape(e.bodyId, &shapeDef, &poly);
+
+            // Make the render shape
+            e.renderId = this.shapeRenderer.addCapsule(float2(e.pos.x, screen.y - e.pos.y), 
+                                                    height * 2, 
+                                                    radius * 2, 
+                                                    e.rotationACW, 
+                                                    e.innerColour, 
+                                                    e.outerColour);
         }
     }
+    /** Update Box2D physics simulation */
     void updatePhysics(Frame frame) {
+        float dt = (frame.perSecond * 60) * SIMULATION_SPEED;
         physicsTimer.start();
-        b2World_Step(worldId, minOf(frame.perSecond*60, 1/30f), 4);
+        b2World_Step(worldId, minOf(dt, 1/30f), SIMULATION_STEPS);
         physicsTimer.stop();
     }
-    /** Update SDF2DShapes */
+    /** Update shapes in ShapeRenderer */
     void updateRenderer(Frame frame) {
         b2BodyEvents bodyEvents = b2World_GetBodyEvents(worldId);
         foreach(i; 0..bodyEvents.moveCount) {
             b2BodyMoveEvent evt = bodyEvents.moveEvents[i];
             if(evt.fellAsleep) {
-                log("body %s fell asleep", evt.bodyId);
+                //log("body %s fell asleep", evt.bodyId);
             }      
             Entity* entity = evt.userData.as!(Entity*);
             entity.pos = evt.transform.p.as!float2;
-            entity.rotation = b2Rot_GetAngle(evt.transform.q).radians;
+            entity.rotationACW = b2Rot_GetAngle(evt.transform.q).radians;
 
-            sdfShapes.moveShape(entity.renderId, entity.pos, entity.rotation);
+            shapeRenderer.moveShape(entity.renderId, entity.pos, entity.rotationACW);
         }
 
-        if(frame.number.value % 1000 == 0 && frame.number.value > 0) {
-            log("physics time = %.2f ms", physicsTimer.peek().total!"nsecs" / 1_000_000.0f);
+        if((frame.number.value & 1023) == 0 && frame.number.value > 0) {
+            double totalPhysicsTime = physicsTimer.peek().total!"nsecs" / 1_000_000.0f;
+            log("physics time = %.3f ms", totalPhysicsTime / frame.number.value);
         }
 
-        sdfShapes.beforeRenderPass(frame);
+        shapeRenderer.beforeRenderPass(frame);
     }
 }

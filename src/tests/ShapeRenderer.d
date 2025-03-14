@@ -1,11 +1,11 @@
-module tests.SDF2DShapes;
+module tests.ShapeRenderer;
 
 import vulkan.all;
 
 /**
- * Render Rectangles and Circles.
+ * Render Rectangles, Circles and Capsules.
  */
-final class SDF2DShapes {
+final class ShapeRenderer {
 public:
     this(VulkanContext context, uint maxShapes) {
         this.context = context;
@@ -24,11 +24,15 @@ public:
         });
         return this;
     }
-    uint addRectangle(float2 pos, float2 size, Angle!float rotation, RGBA innerColour, RGBA outerColour) {
-        return addShape(0, pos, size, rotation, innerColour, outerColour);
+    uint addRectangle(float2 pos, float2 size, Angle!float rotationACW, RGBA innerColour, RGBA outerColour) {
+        return addShape(0, pos, size, rotationACW, innerColour, outerColour);
     }
-    uint addCircle(float2 pos, float radius, Angle!float rotation, RGBA innerColour, RGBA outerColour) {
-        return addShape(1, pos, float2(radius), rotation, innerColour, outerColour);
+    uint addCircle(float2 pos, float radius, Angle!float rotationACW, RGBA innerColour, RGBA outerColour) {
+        return addShape(1, pos, float2(radius), rotationACW, innerColour, outerColour);
+    }
+    uint addCapsule(float2 pos, float height, float radius, Angle!float rotationACW, RGBA innerColour, RGBA outerColour) {
+        throwIf(height < radius, "Height must be greater than radius");
+        return addShape(2, pos, float2(radius, height), rotationACW, innerColour, outerColour);
     }
     auto moveShape(uint id, float2 newPos, Angle!float newRotation) {
         throwIf(id >= numShapes);
@@ -109,7 +113,7 @@ private:
             .withStdColorBlendState()
             .build();            
     }
-    uint addShape(uint shapeType, float2 pos, float2 size, Angle!float rotation, RGBA innerColour, RGBA outerColour) {
+    uint addShape(uint shapeType, float2 pos, float2 size, Angle!float rotationACW, RGBA innerColour, RGBA outerColour) {
         throwIf(numShapes >= maxShapes, "Max number of shapes reached");
         
         auto i = numShapes * 6;
@@ -125,12 +129,12 @@ private:
         // |/|
         // 3-2
         vertices
-            .write((v) { *v = Vertex(shapeType, V[0], pos, size, rotation.radians, innerColour, outerColour); }, i)
-            .write((v) { *v = Vertex(shapeType, V[1], pos, size, rotation.radians, innerColour, outerColour); }, i+1)
-            .write((v) { *v = Vertex(shapeType, V[3], pos, size, rotation.radians, innerColour, outerColour); }, i+2)
-            .write((v) { *v = Vertex(shapeType, V[1], pos, size, rotation.radians, innerColour, outerColour); }, i+3)
-            .write((v) { *v = Vertex(shapeType, V[2], pos, size, rotation.radians, innerColour, outerColour); }, i+4)
-            .write((v) { *v = Vertex(shapeType, V[3], pos, size, rotation.radians, innerColour, outerColour); }, i+5);
+            .write((v) { *v = Vertex(shapeType, V[0], pos, size, rotationACW.radians, innerColour, outerColour); }, i)
+            .write((v) { *v = Vertex(shapeType, V[1], pos, size, rotationACW.radians, innerColour, outerColour); }, i+1)
+            .write((v) { *v = Vertex(shapeType, V[3], pos, size, rotationACW.radians, innerColour, outerColour); }, i+2)
+            .write((v) { *v = Vertex(shapeType, V[1], pos, size, rotationACW.radians, innerColour, outerColour); }, i+3)
+            .write((v) { *v = Vertex(shapeType, V[2], pos, size, rotationACW.radians, innerColour, outerColour); }, i+4)
+            .write((v) { *v = Vertex(shapeType, V[3], pos, size, rotationACW.radians, innerColour, outerColour); }, i+5);
 
         return numShapes++;
     }
