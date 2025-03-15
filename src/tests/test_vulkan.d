@@ -5,14 +5,16 @@ import logging;
 
 import core.sys.windows.windows;
 import core.runtime;
-import std.string : toStringz;
-import std.format : format;
+import std.string             : toStringz;
+import std.format             : format;
 import std.datetime.stopwatch : StopWatch;
-import std.random : uniform;
+import std.random             : uniform;
 import std.datetime.stopwatch : StopWatch, AutoStart;
+import std.math               : abs;
 
 import box2d3;
 import tests.ShapeRenderer;
+import tests.TestScene;
 
 extern(Windows)
 int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int iCmdShow) {
@@ -44,10 +46,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int i
 final class Box2d3Demo : VulkanApplication {
 public:
     enum { 
-        WIDTH            = 1800,
-        HEIGHT           = 1200,
-        SIMULATION_SPEED = 1.0 * 0.15,
-        SIMULATION_STEPS = 4
+        WIDTH  = 1800,
+        HEIGHT = 1200
     }
 
     this() {
@@ -157,75 +157,9 @@ private:
 
     ShapeRenderer shapeRenderer;
 
-    enum ShapeType { RECTANGLE, CIRCLE, CAPSULE }
-
-    static struct Entity {
-        string name;
-        // Body properties
-        ShapeType type;
-        b2BodyId bodyId;
-        bool dynamic = false;
-        float2 pos;
-        float2 size;
-        Angle!float rotationACW = 0.degrees;
-        // Shape properties
-        float density = 1.0;
-        float friction = 0.6f;
-        // Render properties
-        uint renderId;
-        RGBA innerColour;
-        RGBA outerColour;
-
-        string toString() {
-            return format("'%s': pos=%s, size=%s, rot=%s", name, pos, size, rotationACW);
-        }
-    }
-
-    Entity[] entities;
-    
     StopWatch physicsTimer;
-    b2WorldId worldId;
-
-    Entity ground = {
-            name: "Ground",
-            type: ShapeType.RECTANGLE,
-            dynamic: false,
-            pos: float2(WIDTH / 2, 70),
-            size: float2(650.0f, 10.0f),
-            rotationACW: 0.degrees,
-            innerColour: RGBA(1,1,0,1),
-            outerColour: RGBA(1,1,1,1),
-        };
-    Entity fallingBox = {
-            name: "Falling box",
-            type: ShapeType.RECTANGLE,
-            dynamic: true,
-            pos: float2(WIDTH / 2, 500.0f),
-            size: float2(40, 40),   // half width, half height
-            rotationACW: 25.degrees,
-            innerColour: RGBA(0,1,0,1),
-            outerColour: RGBA(1,1,1,1),
-        };
-    Entity fallingCircle = {
-            name: "Falling circle",
-            type: ShapeType.CIRCLE,
-            dynamic: true,
-            pos: float2(WIDTH / 2 + 200, 600.0f),
-            size: float2(40, 40),   // radius, unused
-            rotationACW: 0.degrees,
-            innerColour: RGBA(0,1,1,1),
-            outerColour: RGBA(1,1,1,1),
-        };
-    Entity fallingCapsule = {
-            name: "Falling capsule",
-            type: ShapeType.CAPSULE,
-            dynamic: true,
-            pos: float2(WIDTH / 2 - 300, 600.0f),
-            size: float2(50, 100),  // radius, half height
-            rotationACW: 20.degrees,
-            innerColour: RGBA(0,1,1,1),
-            outerColour: RGBA(1,1,1,1),
-        };    
+    b2WorldId worldId;   
+    Entity[] entities;
 
     void initScene() {
         this.camera = Camera2D.forVulkan(vk.windowSize);
@@ -269,6 +203,11 @@ private:
             float radius = 100;
 
             shapeRenderer.addCapsule(pos, height*2, radius*2, 0.degrees, RGBA(0,1,1,1), RGBA(1,1,1,1));    
+        }
+        static if(true) {
+            float2 pos = float2(200, 200);
+            
+            
         }
 
         static if(false) {   
@@ -341,73 +280,60 @@ private:
         });
         this.log("Created world %s", worldId.toString());
 
-        addShape(ground);
-        addShape(fallingBox);
-        addShape(fallingCircle);
-        addShape(fallingCapsule);
+        this.entities = createScene(worldId, WIDTH, HEIGHT);
+
+        foreach(ref e; entities) {
+            createRenderShape(e);
+        }
     }
 
-    /** Add a shape to the scene */
-    void addShape(ref Entity e) {
+    void createRenderShape(ref Entity e) {
         
+        b2Body_SetUserData(e.bodyId, &e);
+
         auto screen = vk.windowSize().to!float;
-        
-        // Make the Box2D body
-        b2BodyDef def = b2DefaultBodyDef();
-        def.type = e.dynamic ? b2BodyType.b2_dynamicBody : b2BodyType.b2_staticBody;
-        def.position = e.pos.as!b2Vec2;
-        def.rotation = b2ComputeCosSin(e.rotationACW.radians).as!b2Rot;
-        def.userData = &e;
 
-        e.bodyId = b2CreateBody(worldId, &def);
+        foreach(ref s; e.shapes) {
+            if(s.type == ShapeType.CIRCLE) {
 
-        // Make the Box2D shape
-        b2ShapeDef shapeDef = b2DefaultShapeDef();
-        shapeDef.density = e.density;
-        shapeDef.friction = e.friction;
-
-
-        if(e.type == ShapeType.CIRCLE) {
-
-            b2Circle circle = { { 0.0f, 0.0f }, e.size.x };
-
-            b2CreateCircleShape(e.bodyId, &shapeDef, &circle);
-            
-            // Make the render shape
-            e.renderId = this.shapeRenderer.addCircle(float2(e.pos.x, screen.y - e.pos.y), 
-                                                  e.size.x * 2, 
-                                                  e.rotationACW, 
-                                                  e.innerColour, 
-                                                  e.outerColour);
-        } else if(e.type == ShapeType.RECTANGLE) {
-            b2Polygon box = b2MakeBox(e.size.x, e.size.y);
-
-            b2CreatePolygonShape(e.bodyId, &shapeDef, &box);
-
-            // Make the render shape
-            e.renderId = this.shapeRenderer.addRectangle(float2(e.pos.x, screen.y - e.pos.y),  
-                                                     e.size * 2, 
-                                                     e.rotationACW, 
-                                                     e.innerColour, 
-                                                     e.outerColour);
-        } else {
-            float radius = e.size.x;
-            float height = e.size.y;
-            float h = height / 2;
-            float2 p1 = float2(0, -h);
-            float2 p2 = float2(0, h);
-
-            b2Polygon poly = b2MakeCapsule(p1.as!b2Vec2, p2.as!b2Vec2, radius);
-            b2CreatePolygonShape(e.bodyId, &shapeDef, &poly);
-
-            // Make the render shape
-            e.renderId = this.shapeRenderer.addCapsule(float2(e.pos.x, screen.y - e.pos.y), 
-                                                    height * 2, 
-                                                    radius * 2, 
+                CircleData circle = s.data.circle;
+                
+                s.renderId = this.shapeRenderer.addCircle(float2(e.pos.x, screen.y - e.pos.y), 
+                                                    circle.radius * 2, 
                                                     e.rotationACW, 
                                                     e.innerColour, 
                                                     e.outerColour);
+            } else if(s.type == ShapeType.RECTANGLE) {
+
+                RectangleData rect = s.data.rectangle;
+
+                s.renderId = this.shapeRenderer.addRectangle(float2(e.pos.x, screen.y - e.pos.y),  
+                                                        rect.size * 2, 
+                                                        e.rotationACW, 
+                                                        e.innerColour, 
+                                                        e.outerColour);
+            } else if(s.type == ShapeType.CAPSULE) {
+
+                CapsuleData capsule = s.data.capsule;
+
+                float radius = capsule.radius;
+                float height = abs(capsule.p2.y - capsule.p1.y);
+
+                s.renderId = this.shapeRenderer.addCapsule(float2(e.pos.x, screen.y - e.pos.y), 
+                                                        height * 2, 
+                                                        radius * 2, 
+                                                        e.rotationACW, 
+                                                        e.innerColour, 
+                                                        e.outerColour);
+            } else if(s.type == ShapeType.POLYGON) {
+
+                PolygonData poly = s.data.polygon;
+
+                throwIf(true, "Polygon not implemented");
+
+            } else throwIf(true, "Unknown shape type %s", s.type);
         }
+
     }
     /** Update Box2D physics simulation */
     void updatePhysics(Frame frame) {
@@ -424,11 +350,16 @@ private:
             if(evt.fellAsleep) {
                 //log("body %s fell asleep", evt.bodyId);
             }      
+            throwIf(evt.userData is null, "Userdata is null");
             Entity* entity = evt.userData.as!(Entity*);
+            throwIf(entity is null, "Entity 0x%x not found", evt.userData);
+
             entity.pos = evt.transform.p.as!float2;
             entity.rotationACW = b2Rot_GetAngle(evt.transform.q).radians;
-
-            shapeRenderer.moveShape(entity.renderId, entity.pos, entity.rotationACW);
+            
+            foreach(s; entity.shapes) {
+                shapeRenderer.moveShape(s.renderId, entity.pos, entity.rotationACW);
+            }
         }
 
         if((frame.number.value & 1023) == 0 && frame.number.value > 0) {

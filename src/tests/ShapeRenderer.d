@@ -34,6 +34,10 @@ public:
         throwIf(height < radius, "Height must be greater than radius");
         return addShape(2, pos, float2(radius, height), rotationACW, innerColour, outerColour);
     }
+    uint addPolygon(float2 pos, float2[] vertices, Angle!float rotationACW, RGBA innerColour, RGBA outerColour) {
+        throwIf(true, "Polygon not implemented");
+        assert(false);
+    }
     auto moveShape(uint id, float2 newPos, Angle!float newRotation) {
         throwIf(id >= numShapes);
 
@@ -108,8 +112,8 @@ private:
         this.pipeline = new GraphicsPipeline(context)
             .withVertexInputState!Vertex(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
             .withDSLayouts(descriptors.getAllLayouts())
-            .withVertexShader(context.shaders().getModule("rects.slang"), null, "vsmain")
-            .withFragmentShader(context.shaders().getModule("rects.slang"), null, "fsmain")
+            .withVertexShader(context.shaders().getModule("sdf.slang"), null, "vsmain")
+            .withFragmentShader(context.shaders().getModule("sdf.slang"), null, "fsmain")
             .withStdColorBlendState()
             .build();            
     }

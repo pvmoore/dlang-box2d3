@@ -23,7 +23,6 @@ VSOutput vsmain(uint shapeType,
         sin(clockwiseRadians), cos(clockwiseRadians), 0,
         0, 0, 1
     );
-
     let scaleMatrix = float3x3(
         size.x, 0, 0,
         0, size.y, 0,
@@ -53,8 +52,6 @@ struct VSOutput {
     float2 size;
 };
 
-groupshared uint lock;
-
 [shader("fragment")]
 float4 fsmain(VSOutput input) : SV_TARGET { 
 
@@ -73,6 +70,10 @@ float4 fsmain(VSOutput input) : SV_TARGET {
             dist = sdfCircle(p - float2(0, offset) , 0.5);
             dist = min(dist, sdfCircle(p + float2(0, offset) , 0.5));
             dist = min(dist, sdfBox(p, float2(0.5, offset)));
+            break;
+        case 3:
+            // Todo - Polygon
+            //      - Requires extra vertex attributes
             break;
     } 
 

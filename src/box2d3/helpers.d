@@ -9,7 +9,26 @@ b2WorldId createWorld(void delegate(b2WorldDef*) callback = null) {
     return worldId;
 }
 //──────────────────────────────────────────────────────────────────────────────────────────────────
-
+b2BodyDef staticBodyDef(float2 pos, Angle!float rotationACW = 0.degrees) {
+    b2BodyDef def = b2DefaultBodyDef();
+    def.position = pos.as!b2Vec2;
+    def.rotation = rotation(rotationACW.radians);
+    return def;
+}
+b2BodyDef dynamicBodyDef(float2 pos, Angle!float rotationACW = 0.degrees) {
+    b2BodyDef def = b2DefaultBodyDef();
+    def.type = b2BodyType.b2_dynamicBody;
+    def.position = pos.as!b2Vec2;
+    def.rotation = rotation(rotationACW.radians);
+    return def;
+}
+b2BodyDef kinematicBodyDef(float2 pos, Angle!float rotationACW = 0.degrees) {
+    b2BodyDef def = b2DefaultBodyDef();
+    def.type = b2BodyType.b2_kinematicBody;
+    def.position = pos.as!b2Vec2;
+    def.rotation = rotation(rotationACW.radians);
+    return def;
+}
 //──────────────────────────────────────────────────────────────────────────────────────────────────
 string toString(b2WorldId worldId) {
     return "b2WorldId(%s, gravity=%s)".format(worldId, b2World_GetGravity(worldId));
@@ -56,4 +75,7 @@ b2Polygon b2MakeCapsule(b2Vec2 p1, b2Vec2 p2, float radius) {
 }
 b2Vec2 b2Normalize(b2Vec2 v) {
     return v.as!float2.normalised().as!b2Vec2;
+}
+b2Rot rotation(float radiansACW) {
+    return b2ComputeCosSin(radiansACW).as!b2Rot;
 }
