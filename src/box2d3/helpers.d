@@ -53,6 +53,11 @@ void dumpBodyShapes(b2BodyId bodyId) {
         log("polygon = %s", poly.toString(bodyId));
     }
 }
+void dumpVertices(b2Polygon* poly) {
+    foreach(i; 0..poly.count) {
+        log("poly[%s] = %s", i, poly.vertices[i].as!float2);
+    }
+}
 
 //──────────────────────────────────────────────────────────────────────────────────────────────────
 b2Polygon b2MakeCapsule(b2Vec2 p1, b2Vec2 p2, float radius) {

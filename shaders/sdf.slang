@@ -5,6 +5,7 @@ struct UBO {
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<UBO> ubo;
+[[vk::binding(1, 0)]] StructuredBuffer<float2, Std430DataLayout> staticData;
 
 [shader("vertex")]
 VSOutput vsmain(uint shapeType,
@@ -13,7 +14,7 @@ VSOutput vsmain(uint shapeType,
                 float2 size,
                 float anticlockwiseRadians,
                 float4 innerColour,
-                float4 outerColour,
+                uint isAwake,
                 uint vertexId : SV_VertexID) 
 {
     float clockwiseRadians = -anticlockwiseRadians;
@@ -40,7 +41,7 @@ VSOutput vsmain(uint shapeType,
 
     float4 ndcPos = mul(ubo.viewProj, float4(worldPos, 1));
 
-    return VSOutput(shapeType, ndcPos, modelPos, innerColour, outerColour, size);
+    return VSOutput(shapeType, ndcPos, modelPos, innerColour, size, isAwake == 1);
 }
 
 struct VSOutput {
@@ -48,68 +49,141 @@ struct VSOutput {
     float4 position  : SV_POSITION;
     float2 modelPos;
     float4 innerColour;
-    float4 outerColour;
     float2 size;
+    bool isAwake;
 };
 
 [shader("fragment")]
-float4 fsmain(VSOutput input) : SV_TARGET { 
+float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET { 
 
-    // Switch on shapeType. 
-    // It would be more efficient to have a different shader for 
-    // each shape but this will be fine for now
+    // Each shape is made up of 2 triangle primitives
+    uint shapeId = primitiveId / 2;
+
+    // Note: It would be more efficient to have a different shader for 
+    //       each shape but this will be fine for now
+
+    // Signed distance function. dist = distance from the shape. 
+    // ie. negative = inside, 0 = on edge, positive = outside
     float dist;
     switch(input.shapeType) {
-        case 0: dist = sdfBox(input.modelPos, float2(0.5)); break;
-        case 1: dist = sdfCircle(input.modelPos, 0.5); break;
-        case 2:
-            float2 ratio = float2(1, input.size.y / input.size.x);
-            float offset = (ratio.y - 1) * 0.5;
-            float2 p = input.modelPos * ratio;
+        case 0:
+            // Rectangle 
+            dist = sdfBox(input.modelPos, float2(1)); 
+            break;
+        case 1:
+            // Circle 
+            dist = sdfCircle(input.modelPos, 1); 
+            break;
+        case 2: {
+            // Capsule 
+            float2 ratio = getRatio(input.size);
+            float offset = ratio.y * 0.5;
+            float2 p     = input.modelPos * ratio;
 
-            dist = sdfCircle(p - float2(0, offset) , 0.5);
-            dist = min(dist, sdfCircle(p + float2(0, offset) , 0.5));
-            dist = min(dist, sdfBox(p, float2(0.5, offset)));
+            dist = sdfCircle(p - float2(0, offset) , 1);
+            dist = min(dist, sdfCircle(p + float2(0, offset) , 1));
+            dist = min(dist, sdfBox(p, float2(1, offset)));
             break;
-        case 3:
-            // Todo - Polygon
-            //      - Requires extra vertex attributes
+        }
+        case 3: {
+            // Polygon
+            const uint VERTICES_PER_SHAPE = 9;
+
+            uint offset      = shapeId*VERTICES_PER_SHAPE;
+            uint numVertices = uint(staticData[offset].x);
+            float radius     = staticData[offset].y;
+
+            float2 ratio = getRatio(input.size);
+            float2 p     = input.modelPos * ratio;
+
+            dist = sdfPolygon(p, offset+1, numVertices);
             break;
+        }
     } 
 
-    // negative dist = inside the shape
-    // 0 = on the edge 
-    // positive dist = outside the shape
-
+    // Discard fragments outside the shape
     if(dist > 0) {
         discard;
     }
-    
-    // Add the outer edge
-    float n = 100 / vmin(input.size);
-    float edge = clamp(n*n*n*n, 5, 20);
 
-    dist = clamp(dist*300+edge, 0, 1);
+    float4 colour = input.innerColour;
 
-    return lerp(input.innerColour, input.outerColour, dist);
+    // Reduce alpha if the shape is asleep
+    if(!input.isAwake) {
+        colour.a *= 0.5;
+    }
+
+    // Draw the shape colour or white if on the edge of the shape
+    return (dist > -0.03) ? float4(1,1,1,1) : colour;
 }
+/** 
+ * See https://iquilezles.org/articles/distfunctions2d/
+ *   
+ * params:
+ *  p: point
+ *  b: box size
+ */
 float sdfBox(float2 p, float2 b) {
 	float2 d = abs(p) - b;
 	return length(max(d, float2(0))) + vmax(min(d, float2(0)));
 }
+/** 
+ * See https://iquilezles.org/articles/distfunctions2d/
+ *   
+ * params:
+ *  p: point
+ *  r: circle radius
+ */
 float sdfCircle(float2 p, float r) {
     return length(p) - r;
 }
-
+/** 
+ * See https://iquilezles.org/articles/distfunctions2d/
+ *
+ * params:
+ *  p: point
+ *  k: offset of first vertex in staticData buffer
+ *  numVertices: number of polygon vertices
+ */
+float sdfPolygon(float2 p, uint k, uint numVertices) {
+    float2 v = p-staticData[k];
+    float d = dot(v, v);
+    float s = 1.0;
+    for(int i=0, j=numVertices-1; i<numVertices; j=i, i++) {
+        float2 e = staticData[k+j] - staticData[k+i];
+        float2 w = p - staticData[k+i];
+        float2 b = w - e*clamp(dot(w,e)/dot(e,e), 0.0, 1.0);
+        d = min(d, dot(b,b));
+        bool3 c = bool3(p.y>=staticData[k+i].y, p.y<staticData[k+j].y, e.x*w.y>e.y*w.x);
+        if(all(c) || all(!(c))) s *= -1.0;  
+    }
+    return s*sqrt(d);
+}
+/**
+ * Multiply model position by this ratio to fill the rectangle correctly
+ */
+[ForceInline]
+float2 getRatio(float2 size) {
+    return size.y > size.x ? float2(1, size.y / size.x) : float2(size.x / size.y, 1);
+}
+/**
+ * Return the minimum of vector x and y
+ */
 [ForceInline]
 float vmin(float2 v) {
 	return min(v.x, v.y);
 }
-[ForceInline]
-float ndot(float2 a, float2 b) { 
-    return a.x*b.x - a.y*b.y; 
-}
+/**
+ * Return the maximum of vector x and y
+ */
 [ForceInline]
 float vmax(float2 v) {
 	return max(v.x, v.y);
+}
+/**
+ * Return the negative dot product of two vectors
+ */
+[ForceInline]
+float ndot(float2 a, float2 b) { 
+    return a.x*b.x - a.y*b.y; 
 }

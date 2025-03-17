@@ -182,6 +182,7 @@ private:
         context.withBuffer(MemID.LOCAL, BufID.VERTEX, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 32.MB)
                .withBuffer(MemID.LOCAL, BufID.INDEX, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 32.MB)
                .withBuffer(MemID.LOCAL, BufID.UNIFORM, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 1.MB)
+               .withBuffer(MemID.LOCAL, BufID.STORAGE, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 1.MB)
                .withBuffer(MemID.STAGING, BufID.STAGING, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 32.MB);
 
         context.withFonts("resources/fonts/")
@@ -202,10 +203,23 @@ private:
             float height = 150;
             float radius = 100;
 
-            shapeRenderer.addCapsule(pos, height*2, radius*2, 0.degrees, RGBA(0,1,1,1), RGBA(1,1,1,1));    
+            shapeRenderer.addCapsule(pos, height*2, radius*2, 0.degrees, RGBA(0,1,1,1));    
         }
-        static if(true) {
+
+        static if(false) {
+            float2[] points = [
+                float2( 0.5, 0.7),    // 0.5, 1 
+                float2(-0.5, 1),
+                float2(-1, 0), 
+                float2(-0.5, -1),
+                float2(0.5, -1),
+                float2(1, 0)
+            ];
+
             float2 pos = float2(200, 200);
+            float2 size = float2(100, 100);
+            float radius = 0;
+            shapeRenderer.addPolygon(pos, size, radius, points, 0.degrees, RGBA(0,1,0,1));
             
             
         }
@@ -299,19 +313,17 @@ private:
                 CircleData circle = s.data.circle;
                 
                 s.renderId = this.shapeRenderer.addCircle(float2(e.pos.x, screen.y - e.pos.y), 
-                                                    circle.radius * 2, 
+                                                    circle.radius, 
                                                     e.rotationACW, 
-                                                    e.innerColour, 
-                                                    e.outerColour);
+                                                    e.innerColour);
             } else if(s.type == ShapeType.RECTANGLE) {
 
                 RectangleData rect = s.data.rectangle;
 
                 s.renderId = this.shapeRenderer.addRectangle(float2(e.pos.x, screen.y - e.pos.y),  
-                                                        rect.size * 2, 
+                                                        rect.size, 
                                                         e.rotationACW, 
-                                                        e.innerColour, 
-                                                        e.outerColour);
+                                                        e.innerColour);
             } else if(s.type == ShapeType.CAPSULE) {
 
                 CapsuleData capsule = s.data.capsule;
@@ -320,16 +332,19 @@ private:
                 float height = abs(capsule.p2.y - capsule.p1.y);
 
                 s.renderId = this.shapeRenderer.addCapsule(float2(e.pos.x, screen.y - e.pos.y), 
-                                                        height * 2, 
-                                                        radius * 2, 
+                                                        height, 
+                                                        radius, 
                                                         e.rotationACW, 
-                                                        e.innerColour, 
-                                                        e.outerColour);
+                                                        e.innerColour);
             } else if(s.type == ShapeType.POLYGON) {
 
                 PolygonData poly = s.data.polygon;
 
-                throwIf(true, "Polygon not implemented");
+                s.renderId = this.shapeRenderer.addPolygon(float2(e.pos.x, screen.y - e.pos.y), 
+                                                        poly.radius, 
+                                                        poly.vertices, 
+                                                        e.rotationACW, 
+                                                        e.innerColour);
 
             } else throwIf(true, "Unknown shape type %s", s.type);
         }
@@ -344,22 +359,47 @@ private:
     }
     /** Update shapes in ShapeRenderer */
     void updateRenderer(Frame frame) {
+
+        // Body events (move/rotation events)
         b2BodyEvents bodyEvents = b2World_GetBodyEvents(worldId);
         foreach(i; 0..bodyEvents.moveCount) {
             b2BodyMoveEvent evt = bodyEvents.moveEvents[i];
-            if(evt.fellAsleep) {
-                //log("body %s fell asleep", evt.bodyId);
-            }      
             throwIf(evt.userData is null, "Userdata is null");
             Entity* entity = evt.userData.as!(Entity*);
             throwIf(entity is null, "Entity 0x%x not found", evt.userData);
+            
+            if(evt.fellAsleep) {
+                //log("body %s fell asleep", evt.bodyId);
+                entity.isAwake = false;
+            }      
 
             entity.pos = evt.transform.p.as!float2;
             entity.rotationACW = b2Rot_GetAngle(evt.transform.q).radians;
             
             foreach(s; entity.shapes) {
-                shapeRenderer.moveShape(s.renderId, entity.pos, entity.rotationACW);
+                shapeRenderer.moveShape(s.renderId, entity.pos, entity.rotationACW, entity.isAwake);
             }
+        }
+
+        // Contact events (touch events)
+        b2ContactEvents contactEvents = b2World_GetContactEvents(worldId);
+        foreach(i; 0..contactEvents.hitCount) {
+            b2ContactHitEvent evt = contactEvents.hitEvents[i];
+        }
+        foreach(i; 0..contactEvents.beginCount) {
+            b2ContactBeginTouchEvent beginEvent = contactEvents.beginEvents[i];
+        }
+        foreach(i; 0..contactEvents.endCount) {
+            b2ContactEndTouchEvent endEvent = contactEvents.endEvents[i];
+        }
+
+        // Sensor events
+        b2SensorEvents sensorEvents = b2World_GetSensorEvents(worldId);
+        foreach(i; 0..sensorEvents.beginCount) {
+            b2SensorBeginTouchEvent evt = sensorEvents.beginEvents[i];
+        }
+        foreach(i; 0..sensorEvents.endCount) {
+            b2SensorEndTouchEvent evt = sensorEvents.endEvents[i];
         }
 
         if((frame.number.value & 1023) == 0 && frame.number.value > 0) {

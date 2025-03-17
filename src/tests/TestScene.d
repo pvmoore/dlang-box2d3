@@ -1,7 +1,9 @@
 module tests.TestScene;
 
 import box2d3;
-import vulkan : RGBA;
+import vulkan        : RGBA;
+import std.algorithm : map;
+import std.range     : array;
 
 enum { 
     SIMULATION_SPEED = 1.0 * 0.15,
@@ -15,14 +17,14 @@ struct Entity {
     b2BodyId bodyId;
     b2BodyType type;
     float2 pos;
-    Angle!float rotationACW ;
+    Angle!float rotationACW;
+    bool isAwake = true;
 
     // Shape properties
     Shape[] shapes;
 
     // Render properties
     RGBA innerColour = RGBA(0,0,1,1);
-    RGBA outerColour = RGBA(1,1,1,1);
 
     void createBody(b2WorldId worldId, b2BodyDef def) {
         this.type = def.type;
@@ -52,11 +54,24 @@ struct Entity {
         shape.data.capsule = CapsuleData(p1, p2, radius);
         this.shapes ~= shape;
     }
-    void addPolygonShape(b2ShapeDef def, float2[] vertices, float radius) {
+    /** 
+     * params:
+     *   def: The shape definition
+     *   vertices: The vertices of the polygon (in local model coordinates, x is right, y is up)
+     *   radius: If 0, the polygon will have sharp edges (default)
+     *           If > 0, the polygon will have extra padding around the outside 
+     *           If < 0, the edge will be inset
+     */
+    void addPolygonShape(b2ShapeDef def, float2[] vertices, float radius = 0) {
+        // Calcutate the hull
         b2Hull hull = b2ComputeHull(vertices.ptr.as!(b2Vec2*), vertices.length.as!uint);
+        throwIfNot(b2ValidateHull(&hull));
+
+        // Create the polygon
         b2Polygon poly = b2MakePolygon(&hull, radius);
         auto shapeId = b2CreatePolygonShape(bodyId, &def, &poly);
 
+        // Create the shape
         Shape shape = {type: ShapeType.POLYGON, def: def, shapeId: shapeId};
         shape.data.polygon = PolygonData(vertices, radius);
 
@@ -68,7 +83,6 @@ struct Entity {
     }
 }
 //──────────────────────────────────────────────────────────────────────────────────────────────────
-enum ShapeType { RECTANGLE, CIRCLE, CAPSULE, POLYGON }
 
 struct Shape {
     ShapeType type;
@@ -109,55 +123,52 @@ Entity[] createScene(b2WorldId worldId, float width, float height) {
 
     Entity ground = {
         name: "Ground",
-        innerColour: RGBA(1,1,0,1),
-        outerColour: RGBA(1,1,1,1),
+        innerColour: RGBA(1,1,0,1)
     };
     ground.createBody(worldId, staticBodyDef(float2(width / 2, 70), 0.degrees));
     ground.addRectangleShape(shapeDef, float2(650.0f, 10.0f));
 
     Entity fallingBox = {
         name: "Falling box",
-        innerColour: RGBA(0,1,0,1),
-        outerColour: RGBA(1,1,1,1),
+        innerColour: RGBA(0,1,0,1)
     };
     fallingBox.createBody(worldId, dynamicBodyDef(float2(width / 2, 500.0f), 25.degrees));
     fallingBox.addRectangleShape(shapeDef, float2(40, 40));
 
     Entity fallingCircle = {
         name: "Falling circle",
-        innerColour: RGBA(0,1,1,1),
-        outerColour: RGBA(1,1,1,1),
+        innerColour: RGBA(0,1,1,1)
     };
     fallingCircle.createBody(worldId, dynamicBodyDef(float2(width / 2 + 200, 600.0f), 0.degrees));
     fallingCircle.addCircleShape(shapeDef, 40);
 
     Entity fallingCapsule = {
         name: "Falling capsule",
-        innerColour: RGBA(0.7,0.1,0.8,1),
-        outerColour: RGBA(1,1,1,1),
+        innerColour: RGBA(0.7,0.1,0.8,1)
     }; 
     fallingCapsule.createBody(worldId, dynamicBodyDef(float2(width / 2 - 300, 600.0f), 20.degrees));
     fallingCapsule.addCapsuleShape(shapeDef, float2(0, -50), float2(0, 50), 50);    
 
-    static if(false) {
     Entity fallingPolygon = {
         name: "Falling polygon",
-        innerColour: RGBA(0.3,0.3,0.8,1),
-        outerColour: RGBA(1,1,1,1),
+        innerColour: RGBA(0.3,0.3,0.8,1)
     };
-    fallingPolygon.createBody(worldId, dynamicBodyDef(float2(width / 2 + 400, 600.0f), 0.degrees));    
+    fallingPolygon.createBody(worldId, dynamicBodyDef(float2(width / 2 + 450, 600.0f), 45.degrees));    
     fallingPolygon.addPolygonShape(shapeDef, [
-        float2(0,0), 
-        float2(0,100), 
-        float2(100,100), 
-        float2(100,0)], 
-        10);    
-    }
+            float2( 0.5, 0.7),   
+            float2(-0.5, 1),
+            float2(-1, 0), 
+            float2(-0.5, -1),
+            float2(0.5, -1),
+            float2(1, 0)     
+        ].map!(it=>it * 70).array,
+        0);    
 
     return [
         ground, 
         fallingBox, 
         fallingCircle, 
-        fallingCapsule
+        fallingCapsule,
+        fallingPolygon
     ];
 }
