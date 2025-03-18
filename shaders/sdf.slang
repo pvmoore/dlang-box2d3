@@ -53,6 +53,28 @@ struct VSOutput {
     bool isAwake;
 };
 
+typedef Buffer<float2, Std430DataLayout> BufferFloat2;
+
+struct Buffer<T, L: IBufferDataLayout> : IArray<T> {
+    StructuredBuffer<T, L> data;
+    int offset;
+    int count;
+
+    __init(StructuredBuffer<T, L> data, int offset, int count) {
+        this.data = data;
+        this.offset = offset;
+        this.count = count;
+    }
+    // IArray interface
+    __subscript(int i) -> T {
+        get { return data[offset+i]; }
+    }
+    // IArray interface
+    int getCount() {
+        return count;
+    }
+}
+
 [shader("fragment")]
 float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET { 
 
@@ -89,14 +111,15 @@ float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET {
             // Polygon
             const uint VERTICES_PER_SHAPE = 9;
 
-            uint offset      = shapeId*VERTICES_PER_SHAPE;
-            uint numVertices = uint(staticData[offset].x);
-            float radius     = staticData[offset].y;
+            let offset      = shapeId*VERTICES_PER_SHAPE;
+            let numVertices = uint(staticData[offset].x);
+            let radius      = staticData[offset].y;
 
-            float2 ratio = getRatio(input.size);
-            float2 p     = input.modelPos * ratio;
+            let ratio    = getRatio(input.size);
+            let p        = input.modelPos * ratio;
+            let vertices = Buffer<float2, Std430DataLayout>(staticData, offset+1, numVertices);
 
-            dist = sdfPolygon(p, offset+1, numVertices);
+            dist = sdfPolygon(p, vertices);
             break;
         }
     } 
@@ -141,20 +164,22 @@ float sdfCircle(float2 p, float r) {
  * See https://iquilezles.org/articles/distfunctions2d/
  *
  * params:
- *  p: point
- *  k: offset of first vertex in staticData buffer
- *  numVertices: number of polygon vertices
+ *  p:        point
+ *  vertices: vertex array
  */
-float sdfPolygon(float2 p, uint k, uint numVertices) {
-    float2 v = p-staticData[k];
+float sdfPolygon(float2 p, IArray<float2> vertices) {
+    int numVertices = vertices.getCount();
+    float2 v = p-vertices[0];
     float d = dot(v, v);
     float s = 1.0;
     for(int i=0, j=numVertices-1; i<numVertices; j=i, i++) {
-        float2 e = staticData[k+j] - staticData[k+i];
-        float2 w = p - staticData[k+i];
+        float2 prev = vertices[j];
+        float2 curr = vertices[i];
+        float2 e = prev - curr;
+        float2 w = p - curr;
         float2 b = w - e*clamp(dot(w,e)/dot(e,e), 0.0, 1.0);
         d = min(d, dot(b,b));
-        bool3 c = bool3(p.y>=staticData[k+i].y, p.y<staticData[k+j].y, e.x*w.y>e.y*w.x);
+        bool3 c = bool3(p.y>=curr.y, p.y<prev.y, e.x*w.y>e.y*w.x);
         if(all(c) || all(!(c))) s *= -1.0;  
     }
     return s*sqrt(d);

@@ -13,7 +13,7 @@ A Dlang wrapper for Box2D 3.x.
 
 ## Installation
 
-git clone --recurse-submodules https://github.com/pvmoore/dlang-box2d3.git
+git clone --recursive https://github.com/pvmoore/dlang-box2d3.git
 
 ```
 cd box2d  
