@@ -36,22 +36,22 @@ struct Entity {
     void addRectangleShape(b2ShapeDef def, float2 size) {
         b2Polygon box = b2MakeBox(size.x, size.y);
         auto shapeId = b2CreatePolygonShape(bodyId, &def, &box);
-        Shape shape = {type: ShapeType.RECTANGLE, def: def, shapeId: shapeId};
-        shape.data.rectangle = RectangleData(size);
+        Shape shape = {type: ShapeType.RECTANGLE};
+        shape.data.rectangle = RectangleData(def, shapeId, size);
         this.shapes ~= shape;
     }
     void addCircleShape(b2ShapeDef def, float radius, float2 centre = float2(0,0)) {
         b2Circle circle = {centre.as!b2Vec2, radius};
         auto shapeId = b2CreateCircleShape(bodyId, &def, &circle);
-        Shape shape = {type: ShapeType.CIRCLE, def: def, shapeId: shapeId};
-        shape.data.circle = CircleData(centre, radius);
+        Shape shape = {type: ShapeType.CIRCLE};
+        shape.data.circle = CircleData(def, shapeId, centre, radius);
         this.shapes ~= shape;
     }
     void addCapsuleShape(b2ShapeDef def, float2 p1, float2 p2, float radius) {
         b2Polygon capsule = b2MakeCapsule(p1.as!b2Vec2, p2.as!b2Vec2, radius);
         auto shapeId = b2CreatePolygonShape(bodyId, &def, &capsule);
-        Shape shape = {type: ShapeType.CAPSULE, def: def, shapeId: shapeId};
-        shape.data.capsule = CapsuleData(p1, p2, radius);
+        Shape shape = {type: ShapeType.CAPSULE};
+        shape.data.capsule = CapsuleData(def, shapeId, p1, p2, radius);
         this.shapes ~= shape;
     }
     /** 
@@ -72,8 +72,8 @@ struct Entity {
         auto shapeId = b2CreatePolygonShape(bodyId, &def, &poly);
 
         // Create the shape
-        Shape shape = {type: ShapeType.POLYGON, def: def, shapeId: shapeId};
-        shape.data.polygon = PolygonData(vertices, radius);
+        Shape shape = {type: ShapeType.POLYGON};
+        shape.data.polygon = PolygonData(def, shapeId, vertices, radius);
 
         this.shapes ~= shape;
     }
@@ -84,8 +84,23 @@ struct Entity {
             point2: p2.as!b2Vec2
         };
         auto shapeId = b2CreateSegmentShape(bodyId, &def, &segment);
-        Shape shape = {type: ShapeType.SEGMENT, def: def, shapeId: shapeId};
-        shape.data.segment = SegmentData(p1, p2);
+        Shape shape = {type: ShapeType.SEGMENT};
+        shape.data.segment = SegmentData(def, shapeId, p1, p2);
+
+        this.shapes ~= shape;
+    }
+
+    void addChainSegmentShape(b2ChainDef def, float2[] vertices) {
+        throwIf(vertices.length < 2, "Must have at least 2 vertices");
+
+        def.points = vertices.ptr.as!(b2Vec2*);
+        def.count = vertices.length.as!uint;
+
+        auto chainId = b2CreateChain(bodyId, &def);
+
+        Shape shape = {type: ShapeType.CHAIN_SEGMENT};
+        shape.data.chainSegment = ChainSegmentData(def, chainId);
+        shape.data.chainSegment.vertices = vertices;
 
         this.shapes ~= shape;
     }
@@ -99,29 +114,43 @@ struct Entity {
 struct Shape {
     ShapeType type;
     ShapeData data;
-    b2ShapeId shapeId;
     uint renderId;
-    b2ShapeDef def;
 }
 struct RectangleData {
+    b2ShapeDef def;
+    b2ShapeId shapeId;  
     float2 size;
 }
 struct CircleData {
+    b2ShapeDef def;
+    b2ShapeId shapeId;  
     float2 centre = float2(0,0);
     float radius;
 }
 struct CapsuleData {
+    b2ShapeDef def;
+    b2ShapeId shapeId;  
     float2 p1;
     float2 p2;
     float radius;
 }
 struct PolygonData {
+    b2ShapeDef def;
+    b2ShapeId shapeId;  
     float2[] vertices;
     float radius;
 }
 struct SegmentData {
+    b2ShapeDef def;
+    b2ShapeId shapeId;  
     float2 p1;
     float2 p2;
+}
+struct ChainSegmentData {
+    b2ChainDef chainDef;
+    b2ChainId chainId;
+    float2[] vertices;
+    uint[] renderIds;
 }
 union ShapeData {
     RectangleData rectangle;
@@ -129,6 +158,7 @@ union ShapeData {
     CapsuleData capsule;
     PolygonData polygon;
     SegmentData segment;
+    ChainSegmentData chainSegment;  
 }
 //──────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -190,12 +220,30 @@ Entity[] createScene(b2WorldId worldId, float width, float height) {
 
     //segment.addSegmentShape(shapeDef, float2(0,0), float2(200,100));
 
+
+    Entity chain = {
+        name: "Chain",
+        innerColour: RGBA(1, 0.5, 0.8, 1)
+    };
+    chain.createBody(worldId, staticBodyDef(float2(width / 2 + 150, 300.0f)));
+
+    chain.addChainSegmentShape(b2DefaultChainDef(), 
+        [
+            // only the right side of the chain will collide
+            float2(70,-60),     // ghost
+            float2(20,-80),
+            float2(-100,-50), 
+            float2(-200,-50), 
+            float2(-300,0),     // ghost
+        ].map!(it=>it + float2(-40, 0)).array);    
+
     return [
         ground, 
         fallingBox, 
         fallingCircle, 
         fallingCapsule,
         fallingPolygon,
-        segment
+        segment,
+        chain
     ];
 }

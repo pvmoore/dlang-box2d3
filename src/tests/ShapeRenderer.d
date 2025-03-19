@@ -72,17 +72,20 @@ public:
         
         return addShape(ShapeType.POLYGON, pos, size, rotationACW, innerColour);
     }
-    auto addSegment(float2 pos, float2 p1, float2 p2, RGBA innerColour) {
+    auto addSegment(float2 pos, float2 p1, float2 p2, RGBA innerColour, bool isGhost) {
 
+        // Add isGhost to the static buffer
+        float2* ptr = staticVertices.map() + (numShapes*STATIC_DATA_PER_SHAPE);
+        ptr[0] = float2(isGhost ? 1 : 0, 0);
+
+        // Create a vertical rectangle bounding box (width=5, height=half length)
         float length     = (p2-p1).length();
         float2 centre    = (p1 + p2) / 2;
         auto rotation    = (p2-p1).angle();
+        float2 rect = float2(5, length/2);        
 
         // Swap y
         centre.y = -centre.y;
-
-        // Create a vertical rectangle bounding box (width=5, height=half length)
-        float2 rect = float2(5, length/2);        
 
         return addShape(ShapeType.SEGMENT, pos+centre, rect, rotation, innerColour);
     }

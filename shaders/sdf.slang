@@ -85,6 +85,9 @@ float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET {
     let shapeId          = primitiveId / 2;
     let staticDataOffset = shapeId*STATIC_DATA_PER_SHAPE; 
     let distFromCentre   = length(input.modelPos) / vmax(input.size);
+
+    var colour     = input.innerColour;
+    var edgeColour = float4(1,1,1,1);
     
     
     // Note: It would be more efficient to have a different shader for 
@@ -128,6 +131,11 @@ float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET {
         }
         case 4: {
             // Segment (line)
+            let isGhost = bool(staticData[staticDataOffset].x);
+            if(isGhost) {
+                edgeColour = float4(0.6, 0.6, 0.2, 0.6);
+            }
+
             dist = sdfSegment(input.modelPos, float2(0,-1), float2(0,1)) - 0.2;
             break;
         }
@@ -140,9 +148,9 @@ float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET {
     }
 
     // If the bounding box is really thin just return the outer colour
-    if(vmin(input.size) < 6) return float4(1,1,1,1);
+    if(vmin(input.size) < 6) return edgeColour;
 
-    float4 colour = input.innerColour;
+    
 
     // Reduce alpha if the shape is asleep
     if(!input.isAwake) {
@@ -152,7 +160,7 @@ float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET {
     float edge = max(0.07, vmax(input.size) / 500 * 0.07);
 
     // Draw the shape colour or white if on the edge of the shape
-    return (dist > -0.07) ? float4(1,1,1,1) : colour;
+    return (dist > -0.07) ? edgeColour : colour;
 }
 /** 
  * See https://iquilezles.org/articles/distfunctions2d/

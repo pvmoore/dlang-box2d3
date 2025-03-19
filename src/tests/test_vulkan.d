@@ -352,7 +352,19 @@ private:
                 s.renderId = this.shapeRenderer.addSegment(float2(e.pos.x, screen.y - e.pos.y), 
                                                         segment.p1, 
                                                         segment.p2, 
-                                                        e.innerColour);
+                                                        e.innerColour,
+                                                        false);
+            } else if(s.type == ShapeType.CHAIN_SEGMENT) {
+                ChainSegmentData chain = s.data.chainSegment;
+
+                foreach(i; 0..chain.vertices.length-1) {
+                    chain.renderIds ~= this.shapeRenderer
+                        .addSegment(float2(e.pos.x, screen.y - e.pos.y), 
+                                    chain.vertices[i], 
+                                    chain.vertices[i+1], 
+                                    e.innerColour,
+                                    i == 0 || i == chain.vertices.length-2);
+                }
 
             } else throwIf(true, "Unknown shape type %s", s.type);
         }
