@@ -345,6 +345,14 @@ private:
                                                         poly.vertices, 
                                                         e.rotationACW, 
                                                         e.innerColour);
+            } else if(s.type == ShapeType.SEGMENT) {
+
+                SegmentData segment = s.data.segment;
+                
+                s.renderId = this.shapeRenderer.addSegment(float2(e.pos.x, screen.y - e.pos.y), 
+                                                        segment.p1, 
+                                                        segment.p2, 
+                                                        e.innerColour);
 
             } else throwIf(true, "Unknown shape type %s", s.type);
         }

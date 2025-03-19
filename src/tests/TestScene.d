@@ -6,7 +6,7 @@ import std.algorithm : map;
 import std.range     : array;
 
 enum { 
-    SIMULATION_SPEED = 1.0 * 0.15,
+    SIMULATION_SPEED = 1.0 * 0.1,
     SIMULATION_STEPS = 4
 }
 
@@ -78,6 +78,18 @@ struct Entity {
         this.shapes ~= shape;
     }
 
+    void addSegmentShape(b2ShapeDef def, float2 p1, float2 p2) {
+        b2Segment segment = {
+            point1: p1.as!b2Vec2, 
+            point2: p2.as!b2Vec2
+        };
+        auto shapeId = b2CreateSegmentShape(bodyId, &def, &segment);
+        Shape shape = {type: ShapeType.SEGMENT, def: def, shapeId: shapeId};
+        shape.data.segment = SegmentData(p1, p2);
+
+        this.shapes ~= shape;
+    }
+
     string toString() {
         return format("'%s': pos=%s, rot=%s", name, pos, rotationACW);
     }
@@ -107,11 +119,16 @@ struct PolygonData {
     float2[] vertices;
     float radius;
 }
+struct SegmentData {
+    float2 p1;
+    float2 p2;
+}
 union ShapeData {
     RectangleData rectangle;
     CircleData circle;
     CapsuleData capsule;
     PolygonData polygon;
+    SegmentData segment;
 }
 //──────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -161,14 +178,24 @@ Entity[] createScene(b2WorldId worldId, float width, float height) {
             float2(-0.5, -1),
             float2(0.5, -1),
             float2(1, 0)     
-        ].map!(it=>it * 70).array,
+        ].map!(it=>it * float2(70, 70)).array,
         0);    
+
+    Entity segment = {
+        name: "Segment 1",
+        innerColour: RGBA(0.8,0.3,0.8,1)
+    };
+    segment.createBody(worldId, staticBodyDef(float2(width / 2 + 350, 300.0f)));
+    segment.addSegmentShape(shapeDef, float2(-145,-40), float2(200,100));
+
+    //segment.addSegmentShape(shapeDef, float2(0,0), float2(200,100));
 
     return [
         ground, 
         fallingBox, 
         fallingCircle, 
         fallingCapsule,
-        fallingPolygon
+        fallingPolygon,
+        segment
     ];
 }

@@ -53,14 +53,13 @@ struct VSOutput {
     bool isAwake;
 };
 
-typedef Buffer<float2, Std430DataLayout> BufferFloat2;
-
-struct Buffer<T, L: IBufferDataLayout> : IArray<T> {
-    StructuredBuffer<T, L> data;
+// Buffer slice
+struct Buffer<T> : IArray<T> {
+    StructuredBuffer<T, Std430DataLayout> data;
     int offset;
     int count;
 
-    __init(StructuredBuffer<T, L> data, int offset, int count) {
+    __init(StructuredBuffer<T, Std430DataLayout> data, int offset, int count) {
         this.data = data;
         this.offset = offset;
         this.count = count;
@@ -75,12 +74,19 @@ struct Buffer<T, L: IBufferDataLayout> : IArray<T> {
     }
 }
 
+// staticData contains 9 float2s per shape
+static const uint STATIC_DATA_PER_SHAPE = 9;
+static const bool SHOW_BOUNDING_BOX     = true;
+
 [shader("fragment")]
 float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET { 
 
     // Each shape is made up of 2 triangle primitives
-    uint shapeId = primitiveId / 2;
-
+    let shapeId          = primitiveId / 2;
+    let staticDataOffset = shapeId*STATIC_DATA_PER_SHAPE; 
+    let distFromCentre   = length(input.modelPos) / vmax(input.size);
+    
+    
     // Note: It would be more efficient to have a different shader for 
     //       each shape but this will be fine for now
 
@@ -88,19 +94,20 @@ float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET {
     // ie. negative = inside, 0 = on edge, positive = outside
     float dist;
     switch(input.shapeType) {
-        case 0:
+        case 0: {
             // Rectangle 
-            dist = sdfBox(input.modelPos, float2(1)); 
+            dist = sdfBox(input.modelPos * (1.1), float2(1)) - 0.1; 
             break;
+        }
         case 1:
             // Circle 
-            dist = sdfCircle(input.modelPos, 1); 
+            dist = sdfCircle(input.modelPos, 1.0); 
             break;
         case 2: {
             // Capsule 
-            float2 ratio = getRatio(input.size);
-            float offset = ratio.y * 0.5;
-            float2 p     = input.modelPos * ratio;
+            let ratio  = getRatio(input.size);
+            let p      = input.modelPos * ratio;
+            let offset = ratio.y * 0.5;
 
             dist = sdfCircle(p - float2(0, offset) , 1);
             dist = min(dist, sdfCircle(p + float2(0, offset) , 1));
@@ -109,25 +116,31 @@ float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET {
         }
         case 3: {
             // Polygon
-            const uint VERTICES_PER_SHAPE = 9;
+            let numVertices = uint(staticData[staticDataOffset].x);
+            let vertices    = Buffer<float2>(staticData, staticDataOffset+1, numVertices);
 
-            let offset      = shapeId*VERTICES_PER_SHAPE;
-            let numVertices = uint(staticData[offset].x);
-            let radius      = staticData[offset].y;
-
-            let ratio    = getRatio(input.size);
-            let p        = input.modelPos * ratio;
-            let vertices = Buffer<float2, Std430DataLayout>(staticData, offset+1, numVertices);
-
-            dist = sdfPolygon(p, vertices);
+            // radius currently unused
+            let radius   = staticData[staticDataOffset].y;
+            
+            //dist = sdfPolygon(input.modelPos * (1.2), vertices) - 0.1;
+            dist = sdfPolygon(input.modelPos, vertices);
+            break;
+        }
+        case 4: {
+            // Segment (line)
+            dist = sdfSegment(input.modelPos, float2(0,-1), float2(0,1)) - 0.2;
             break;
         }
     } 
 
     // Discard fragments outside the shape
     if(dist > 0) {
+        if(SHOW_BOUNDING_BOX) return float4(1,1,1,0.2);
         discard;
     }
+
+    // If the bounding box is really thin just return the outer colour
+    if(vmin(input.size) < 6) return float4(1,1,1,1);
 
     float4 colour = input.innerColour;
 
@@ -136,8 +149,10 @@ float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET {
         colour.a *= 0.5;
     }
 
+    float edge = max(0.07, vmax(input.size) / 500 * 0.07);
+
     // Draw the shape colour or white if on the edge of the shape
-    return (dist > -0.03) ? float4(1,1,1,1) : colour;
+    return (dist > -0.07) ? float4(1,1,1,1) : colour;
 }
 /** 
  * See https://iquilezles.org/articles/distfunctions2d/
@@ -184,6 +199,20 @@ float sdfPolygon(float2 p, IArray<float2> vertices) {
     }
     return s*sqrt(d);
 }
+/** 
+ * See https://iquilezles.org/articles/distfunctions2d/
+ *
+ * params:
+ *  p: point
+ *  a: segment start
+ *  b: segment end
+ */
+float sdfSegment(float2 p, float2 a, float2 b) {
+    float2 pa = p-a, ba = b-a;
+    float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+    return length(pa - ba*h);
+}
+
 /**
  * Multiply model position by this ratio to fill the rectangle correctly
  */

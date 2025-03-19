@@ -2,6 +2,7 @@ module tests.ShapeRenderer;
 
 import vulkan.all;
 import box2d3;
+import std.math : abs;
 
 /**
  * Render Rectangles, Circles and Capsules.
@@ -37,12 +38,8 @@ public:
         return addShape(ShapeType.CAPSULE, pos, float2(radius, height), rotationACW, innerColour);
     }
     uint addPolygon(float2 pos, float radius, float2[] vertices, Angle!float rotationACW, RGBA innerColour) {
-        
-        enum MAX_VERTICES       = 8;
-        enum VERTICES_PER_SHAPE = MAX_VERTICES + 1;
-
         throwIf(vertices.length < 3, "Must have at least 3 vertices");
-        throwIf(vertices.length > MAX_VERTICES, "Max number of vertices is %s", MAX_VERTICES);
+        throwIf(vertices.length > MAX_POLYGON_VERTICES, "Max number of vertices is %s", MAX_POLYGON_VERTICES);
 
         // Calculate the render quad size.
         // Normalise vertices to fit into the -1 to +1 range 
@@ -53,33 +50,43 @@ public:
         foreach(v; vertices) {
             maximum = maximum.max(v);
             minimum = minimum.min(v);
-            //this.log("v = %s", v);
         }
-        float2 size = maximum - minimum;
-        float2 divisor = (maximum - minimum);
-        //this.log("divisor = %s", divisor);
+        float2 size = (maximum - minimum) / 2;
 
         // Write the vertices to the static buffer
-        float2* ptr = staticVertices.map() + (numShapes*VERTICES_PER_SHAPE);
+        float2* ptr = staticVertices.map() + (numShapes*STATIC_DATA_PER_SHAPE);
 
         // Write numVertices and radius into ptr[0]
         ptr[0] = float2(vertices.length.as!float, radius);
-        //this.log("ptr[first] = %s", ptr[0]);
 
         // Write the vertices
-        foreach(i; 0..MAX_VERTICES) {
+        foreach(i; 0..MAX_POLYGON_VERTICES) {
             float2 v = i < vertices.length ? vertices[i] : float2(1);
             // Swap y to convert from Box2D coordinates to Vulkan
             v = float2(v.x, -v.y);
 
             // Write normalised vertex 
-            ptr[i+1] = v / divisor;
-            //this.log("ptr[%s] = %s", i, v);
+            ptr[i+1] = v / size;
         }
-        staticVertices.setDirtyRange(numShapes*VERTICES_PER_SHAPE, numShapes*VERTICES_PER_SHAPE+1);
+        staticVertices.setDirtyRange(numShapes*STATIC_DATA_PER_SHAPE, numShapes*STATIC_DATA_PER_SHAPE+1);
         
         return addShape(ShapeType.POLYGON, pos, size, rotationACW, innerColour);
     }
+    auto addSegment(float2 pos, float2 p1, float2 p2, RGBA innerColour) {
+
+        float length     = (p2-p1).length();
+        float2 centre    = (p1 + p2) / 2;
+        auto rotation    = (p2-p1).angle();
+
+        // Swap y
+        centre.y = -centre.y;
+
+        // Create a vertical rectangle bounding box (width=5, height=half length)
+        float2 rect = float2(5, length/2);        
+
+        return addShape(ShapeType.SEGMENT, pos+centre, rect, rotation, innerColour);
+    }
+    /** Move a shape to a new position and rotation */
     auto moveShape(uint id, float2 newPos, Angle!float newRotation, bool isAwake) {
         throwIf(id >= numShapes);
 
@@ -113,6 +120,9 @@ public:
         renderRectangles(b);
     }
 private:
+    enum MAX_POLYGON_VERTICES  = 8;
+    enum STATIC_DATA_PER_SHAPE = 9;
+
     VulkanContext context;
     Descriptors descriptors;
     GPUData!UBO ubo;
