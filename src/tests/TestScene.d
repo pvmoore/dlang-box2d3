@@ -7,7 +7,7 @@ import std.range     : array;
 import std.random    : uniform01;
 
 enum { 
-    SIMULATION_SPEED = 1.0 * 0.1,
+    SIMULATION_SPEED = 1.0 * 0.5,
     SIMULATION_STEPS = 4
 }
 

@@ -2,6 +2,8 @@
 
 A Dlang wrapper for Box2D 3.x.
 
+![Screenshot](resources/screenshots/screenshot1.png)
+
 ## Requirements
 - Windows
 - Dlang compiler https://dlang.org/
