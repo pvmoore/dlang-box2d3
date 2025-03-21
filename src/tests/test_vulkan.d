@@ -238,8 +238,6 @@ private:
         createRenderJoints();
     }
     void createRenderShapes() {
-        
-        auto screen = vk.windowSize().to!float;
 
         foreach(ref e; scene.entities) {
 

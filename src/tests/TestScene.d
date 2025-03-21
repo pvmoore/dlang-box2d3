@@ -203,6 +203,8 @@ Scene createScene(b2WorldId worldId, float width, float height) {
     addRevoluteJoint(scene, b2coord(400,0), false);
     addRevoluteJoint(scene, b2coord(500,200), true);
 
+    addPrismaticJoint(scene);
+
     return scene;
 }
 void addGround(Scene scene) {
@@ -445,6 +447,68 @@ void addRevoluteJoint(Scene scene, b2coord pos, bool spring) {
     }
 
     b2JointId jointId = b2CreateRevoluteJoint(scene.worldId, &jointDef);
+
+    uint jointIndex = scene.joints.length.as!uint;
+    bodyAPtr.jointIndexes ~= jointIndex;
+    bodyBPtr.jointIndexes ~= jointIndex;
+
+    scene.joints ~= Joint(
+        jointId, 
+        bodyAPtr, 
+        bodyBPtr, 
+        jointDef.localAnchorA.as!b2coord, 
+        jointDef.localAnchorB.as!b2coord);
+}
+void addPrismaticJoint(Scene scene) {
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = 1.0;
+    shapeDef.friction = 0.6f;
+
+    RGBA[2] colours = [
+        RGBA(0.5, 0.5, uniform01(), 1), 
+        RGBA(0.9, 0.5, uniform01(), 1)
+    ];
+
+    b2coord posA = b2coord(250, 1000);
+    b2coord posB = posA + b2coord(100, 0);
+
+    b2Vec2 worldPivot = (posA + (posB-posA) / 2).as!b2Vec2;
+    b2Vec2 worldAxis = (b2coord(1,0)).as!b2Vec2;
+
+    // Body A
+    Entity bodyA = {
+        name: "Body A - prismatic",
+        pos: posA,
+        rotationACW: 0.degrees
+    }; 
+    bodyA.createBody(scene.worldId, dynamicBodyDef(bodyA.pos, bodyA.rotationACW));
+    bodyA.addRectangleShape(shapeDef, float2(60,40), colours[0]); 
+    auto bodyAPtr = scene.entities.appendAndReturnPtr(bodyA);   
+
+    // Body B
+    Entity bodyB = {
+        name: "Body B - prismatic",
+        pos: posB,
+        rotationACW: 0.degrees
+    }; 
+    bodyB.createBody(scene.worldId, dynamicBodyDef(bodyB.pos, bodyB.rotationACW));
+    bodyB.addRectangleShape(shapeDef, float2(60,40), colours[1]);    
+    auto bodyBPtr = scene.entities.appendAndReturnPtr(bodyB); 
+
+    b2PrismaticJointDef jointDef = b2DefaultPrismaticJointDef();
+    jointDef.bodyIdA = bodyA.bodyId;
+    jointDef.bodyIdB = bodyB.bodyId;
+    jointDef.localAnchorA = b2Body_GetLocalPoint(bodyA.bodyId, worldPivot);
+    jointDef.localAnchorB = b2Body_GetLocalPoint(bodyB.bodyId, worldPivot);
+    jointDef.localAxisA = b2Body_GetLocalVector(bodyA.bodyId, worldAxis);
+
+    jointDef.lowerTranslation = -100;
+    jointDef.upperTranslation = 100;
+    jointDef.enableLimit      = true;
+
+    jointDef.collideConnected = false;
+
+    b2JointId jointId = b2CreatePrismaticJoint(scene.worldId, &jointDef);
 
     uint jointIndex = scene.joints.length.as!uint;
     bodyAPtr.jointIndexes ~= jointIndex;
