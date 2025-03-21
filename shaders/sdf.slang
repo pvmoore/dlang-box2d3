@@ -76,7 +76,7 @@ struct Buffer<T> : IArray<T> {
 
 // staticData contains 9 float2s per shape
 static const uint STATIC_DATA_PER_SHAPE = 9;
-static const bool SHOW_BOUNDING_BOX     = true;
+static const bool SHOW_BOUNDING_BOX     = false;
 
 [shader("fragment")]
 float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET { 
@@ -88,7 +88,6 @@ float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET {
 
     var colour     = input.innerColour;
     var edgeColour = float4(1,1,1,1);
-    
     
     // Note: It would be more efficient to have a different shader for 
     //       each shape but this will be fine for now
@@ -132,11 +131,22 @@ float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET {
         case 4: {
             // Segment (line)
             let isGhost = bool(staticData[staticDataOffset].x);
+            let isJoint = bool(staticData[staticDataOffset].y);
             if(isGhost) {
                 edgeColour = float4(0.6, 0.6, 0.2, 0.6);
             }
+            if(isJoint) {
+                edgeColour = float4(0.8, 0.7, 1, 0.6);
 
-            dist = sdfSegment(input.modelPos, float2(0,-1), float2(0,1)) - 0.2;
+                // Create a dashed line
+                uint a = uint((input.modelPos.y+1) * 128);
+                if((a & 8) == 0) {
+                    edgeColour = float4(0,0,0,0);
+                    break;
+                }
+            }
+
+            dist = sdfSegment(input.modelPos, float2(0,-1), float2(0,1)) - 0.3;
             break;
         }
     } 
@@ -149,8 +159,6 @@ float4 fsmain(VSOutput input, uint primitiveId : SV_PrimitiveID) : SV_TARGET {
 
     // If the bounding box is really thin just return the outer colour
     if(vmin(input.size) < 6) return edgeColour;
-
-    
 
     // Reduce alpha if the shape is asleep
     if(!input.isAwake) {

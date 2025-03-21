@@ -158,8 +158,8 @@ private:
     ShapeRenderer shapeRenderer;
 
     StopWatch physicsTimer;
-    b2WorldId worldId;   
-    Entity[] entities;
+    b2WorldId worldId;  
+    Scene scene; 
 
     void initScene() {
         this.camera = Camera2D.forVulkan(vk.windowSize);
@@ -294,82 +294,95 @@ private:
         });
         this.log("Created world %s", worldId.toString());
 
-        this.entities = createScene(worldId, WIDTH, HEIGHT);
+        this.scene = createScene(worldId, WIDTH, HEIGHT);
 
-        foreach(ref e; entities) {
-            createRenderShape(e);
-        }
+        createRenderShapes();
+        createRenderJoints();
     }
-
-    void createRenderShape(ref Entity e) {
+    void createRenderShapes() {
         
-        b2Body_SetUserData(e.bodyId, &e);
-
         auto screen = vk.windowSize().to!float;
 
-        foreach(ref s; e.shapes) {
-            if(s.type == ShapeType.CIRCLE) {
+        foreach(ref e; scene.entities) {
 
-                CircleData circle = s.data.circle;
-                
-                s.renderId = this.shapeRenderer.addCircle(float2(e.pos.x, screen.y - e.pos.y), 
-                                                    circle.radius, 
-                                                    e.rotationACW, 
-                                                    e.innerColour);
-            } else if(s.type == ShapeType.RECTANGLE) {
+            b2Body_SetUserData(e.bodyId, &e);
 
-                RectangleData rect = s.data.rectangle;
+            foreach(ref s; e.shapes) {
+                if(s.type == ShapeType.CIRCLE) {
 
-                s.renderId = this.shapeRenderer.addRectangle(float2(e.pos.x, screen.y - e.pos.y),  
-                                                        rect.size, 
-                                                        e.rotationACW, 
-                                                        e.innerColour);
-            } else if(s.type == ShapeType.CAPSULE) {
+                    CircleData circle = s.data.circle;
+                    
+                    s.renderId = this.shapeRenderer.addCircle(e.pos, 
+                                                              circle.radius, 
+                                                              e.rotationACW, 
+                                                              s.colour);
+                } else if(s.type == ShapeType.RECTANGLE) {
 
-                CapsuleData capsule = s.data.capsule;
+                    RectangleData rect = s.data.rectangle;
 
-                float radius = capsule.radius;
-                float height = abs(capsule.p2.y - capsule.p1.y);
+                    s.renderId = this.shapeRenderer.addRectangle(e.pos,  
+                                                                 rect.size, 
+                                                                 e.rotationACW, 
+                                                                 s.colour);
+                } else if(s.type == ShapeType.CAPSULE) {
 
-                s.renderId = this.shapeRenderer.addCapsule(float2(e.pos.x, screen.y - e.pos.y), 
-                                                        height, 
-                                                        radius, 
-                                                        e.rotationACW, 
-                                                        e.innerColour);
-            } else if(s.type == ShapeType.POLYGON) {
+                    CapsuleData capsule = s.data.capsule;
 
-                PolygonData poly = s.data.polygon;
+                    float radius = capsule.radius;
+                    float height = abs(capsule.p2.y - capsule.p1.y);
 
-                s.renderId = this.shapeRenderer.addPolygon(float2(e.pos.x, screen.y - e.pos.y), 
-                                                        poly.radius, 
-                                                        poly.vertices, 
-                                                        e.rotationACW, 
-                                                        e.innerColour);
-            } else if(s.type == ShapeType.SEGMENT) {
+                    s.renderId = this.shapeRenderer.addCapsule(e.pos, 
+                                                               height, 
+                                                               radius, 
+                                                               e.rotationACW, 
+                                                               s.colour);
+                } else if(s.type == ShapeType.POLYGON) {
 
-                SegmentData segment = s.data.segment;
-                
-                s.renderId = this.shapeRenderer.addSegment(float2(e.pos.x, screen.y - e.pos.y), 
-                                                        segment.p1, 
-                                                        segment.p2, 
-                                                        e.innerColour,
-                                                        false);
-            } else if(s.type == ShapeType.CHAIN_SEGMENT) {
-                ChainSegmentData chain = s.data.chainSegment;
+                    PolygonData poly = s.data.polygon;
 
-                foreach(i; 0..chain.vertices.length-1) {
-                    chain.renderIds ~= this.shapeRenderer
-                        .addSegment(float2(e.pos.x, screen.y - e.pos.y), 
-                                    chain.vertices[i], 
-                                    chain.vertices[i+1], 
-                                    e.innerColour,
-                                    i == 0 || i == chain.vertices.length-2);
-                }
+                    s.renderId = this.shapeRenderer.addPolygon(e.pos, 
+                                                               poly.radius, 
+                                                               poly.vertices, 
+                                                               e.rotationACW, 
+                                                               s.colour);
+                } else if(s.type == ShapeType.SEGMENT) {
 
-            } else throwIf(true, "Unknown shape type %s", s.type);
+                    SegmentData segment = s.data.segment;
+                    
+                    s.renderId = this.shapeRenderer
+                        .addSegment(segment.p1 + e.pos,
+                                    segment.p2 + e.pos,
+                                    s.colour,
+                                    false, false);
+
+                } else if(s.type == ShapeType.CHAIN_SEGMENT) {
+                    ChainSegmentData chain = s.data.chainSegment;
+
+                    foreach(i; 0..chain.vertices.length-1) {
+
+                        chain.renderIds ~= this.shapeRenderer
+                            .addSegment(chain.vertices[i] + e.pos, 
+                                        chain.vertices[i+1] + e.pos, 
+                                        s.colour,
+                                        i == 0 || i == chain.vertices.length-2, false);
+                    }
+
+                } else throwIf(true, "Unknown shape type %s", s.type);
+            }
         }
-
     }
+    void createRenderJoints() {
+
+        foreach(ref j; scene.joints) {
+            auto anchorA = b2Body_GetWorldPoint(j.entityA.bodyId, j.localAnchorA.as!b2Vec2).as!b2coord;
+            auto anchorB = b2Body_GetWorldPoint(j.entityB.bodyId, j.localAnchorB.as!b2Vec2).as!b2coord;
+            j.renderId = shapeRenderer.addSegment(
+                anchorA,
+                anchorB,
+                RGBA(1,1,1,1), false, true);  
+        }
+    }
+
     /** Update Box2D physics simulation */
     void updatePhysics(Frame frame) {
         float dt = (frame.perSecond * 60) * SIMULATION_SPEED;
@@ -384,20 +397,30 @@ private:
         b2BodyEvents bodyEvents = b2World_GetBodyEvents(worldId);
         foreach(i; 0..bodyEvents.moveCount) {
             b2BodyMoveEvent evt = bodyEvents.moveEvents[i];
-            throwIf(evt.userData is null, "Userdata is null");
+            throwIf(evt.userData is null, "Userdata is null (body %s)", evt.bodyId);
             Entity* entity = evt.userData.as!(Entity*);
             throwIf(entity is null, "Entity 0x%x not found", evt.userData);
             
             if(evt.fellAsleep) {
-                //log("body %s fell asleep", evt.bodyId);
                 entity.isAwake = false;
+            } else {
+                entity.isAwake = true;
             }      
 
-            entity.pos = evt.transform.p.as!float2;
+            entity.pos = evt.transform.p.as!b2coord;
             entity.rotationACW = b2Rot_GetAngle(evt.transform.q).radians;
             
             foreach(s; entity.shapes) {
                 shapeRenderer.moveShape(s.renderId, entity.pos, entity.rotationACW, entity.isAwake);
+            }
+
+            // Update joints
+            foreach(j; entity.joints) {
+                auto anchorA = b2Body_GetWorldPoint(j.entityA.bodyId, j.localAnchorA.as!b2Vec2).as!b2coord;
+                auto anchorB = b2Body_GetWorldPoint(j.entityB.bodyId, j.localAnchorB.as!b2Vec2).as!b2coord;
+                uint renderId = j.renderId;
+                
+                shapeRenderer.moveJoint(renderId, anchorA, anchorB);
             }
         }
 

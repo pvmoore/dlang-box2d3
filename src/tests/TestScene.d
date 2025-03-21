@@ -16,41 +16,39 @@ struct Entity {
     // Body properties
     b2BodyId bodyId;
     b2BodyType type;
-    float2 pos;
-    Angle!float rotationACW;
+    b2coord pos;
+    Angle!float rotationACW = 0.degrees;
     bool isAwake = true;
 
     // Shape properties
     Shape[] shapes;
-
-    // Render properties
-    RGBA innerColour = RGBA(0,0,1,1);
+    Joint*[] joints;
 
     void createBody(b2WorldId worldId, b2BodyDef def) {
         this.type = def.type;
-        this.pos = def.position.as!float2;
+        this.pos = def.position.as!b2coord;
         this.rotationACW = b2Rot_GetAngle(def.rotation).radians;
         this.bodyId = b2CreateBody(worldId, &def);
     }
 
-    void addRectangleShape(b2ShapeDef def, float2 size) {
+    void addRectangleShape(b2ShapeDef def, float2 size, RGBA colour) {
         b2Polygon box = b2MakeBox(size.x, size.y);
         auto shapeId = b2CreatePolygonShape(bodyId, &def, &box);
-        Shape shape = {type: ShapeType.RECTANGLE};
+        Shape shape = {type: ShapeType.RECTANGLE, colour: colour};
         shape.data.rectangle = RectangleData(def, shapeId, size);
         this.shapes ~= shape;
     }
-    void addCircleShape(b2ShapeDef def, float radius, float2 centre = float2(0,0)) {
+    void addCircleShape(b2ShapeDef def, float radius, RGBA colour, b2coord centre = b2coord(0,0)) {
         b2Circle circle = {centre.as!b2Vec2, radius};
         auto shapeId = b2CreateCircleShape(bodyId, &def, &circle);
-        Shape shape = {type: ShapeType.CIRCLE};
+        Shape shape = {type: ShapeType.CIRCLE, colour: colour};
         shape.data.circle = CircleData(def, shapeId, centre, radius);
         this.shapes ~= shape;
     }
-    void addCapsuleShape(b2ShapeDef def, float2 p1, float2 p2, float radius) {
+    void addCapsuleShape(b2ShapeDef def, b2coord p1, b2coord p2, float radius, RGBA colour) {
         b2Polygon capsule = b2MakeCapsule(p1.as!b2Vec2, p2.as!b2Vec2, radius);
         auto shapeId = b2CreatePolygonShape(bodyId, &def, &capsule);
-        Shape shape = {type: ShapeType.CAPSULE};
+        Shape shape = {type: ShapeType.CAPSULE, colour: colour};
         shape.data.capsule = CapsuleData(def, shapeId, p1, p2, radius);
         this.shapes ~= shape;
     }
@@ -62,7 +60,7 @@ struct Entity {
      *           If > 0, the polygon will have extra padding around the outside 
      *           If < 0, the edge will be inset
      */
-    void addPolygonShape(b2ShapeDef def, float2[] vertices, float radius = 0) {
+    void addPolygonShape(b2ShapeDef def, b2coord[] vertices, RGBA colour, float radius = 0) {
         // Calcutate the hull
         b2Hull hull = b2ComputeHull(vertices.ptr.as!(b2Vec2*), vertices.length.as!uint);
         throwIfNot(b2ValidateHull(&hull));
@@ -72,25 +70,25 @@ struct Entity {
         auto shapeId = b2CreatePolygonShape(bodyId, &def, &poly);
 
         // Create the shape
-        Shape shape = {type: ShapeType.POLYGON};
+        Shape shape = {type: ShapeType.POLYGON, colour: colour};
         shape.data.polygon = PolygonData(def, shapeId, vertices, radius);
 
         this.shapes ~= shape;
     }
 
-    void addSegmentShape(b2ShapeDef def, float2 p1, float2 p2) {
+    void addSegmentShape(b2ShapeDef def, b2coord p1, b2coord p2, RGBA colour) {
         b2Segment segment = {
             point1: p1.as!b2Vec2, 
             point2: p2.as!b2Vec2
         };
         auto shapeId = b2CreateSegmentShape(bodyId, &def, &segment);
-        Shape shape = {type: ShapeType.SEGMENT};
+        Shape shape = {type: ShapeType.SEGMENT, colour: colour};
         shape.data.segment = SegmentData(def, shapeId, p1, p2);
 
         this.shapes ~= shape;
     }
 
-    void addChainSegmentShape(b2ChainDef def, float2[] vertices) {
+    void addChainSegmentShape(b2ChainDef def, b2coord[] vertices, RGBA colour) {
         throwIf(vertices.length < 2, "Must have at least 2 vertices");
 
         def.points = vertices.ptr.as!(b2Vec2*);
@@ -98,7 +96,7 @@ struct Entity {
 
         auto chainId = b2CreateChain(bodyId, &def);
 
-        Shape shape = {type: ShapeType.CHAIN_SEGMENT};
+        Shape shape = {type: ShapeType.CHAIN_SEGMENT, colour: colour};
         shape.data.chainSegment = ChainSegmentData(def, chainId);
         shape.data.chainSegment.vertices = vertices;
 
@@ -114,6 +112,7 @@ struct Entity {
 struct Shape {
     ShapeType type;
     ShapeData data;
+    RGBA colour = RGBA(1,1,1,1);
     uint renderId;
 }
 struct RectangleData {
@@ -124,32 +123,32 @@ struct RectangleData {
 struct CircleData {
     b2ShapeDef def;
     b2ShapeId shapeId;  
-    float2 centre = float2(0,0);
+    b2coord centre;
     float radius;
 }
 struct CapsuleData {
     b2ShapeDef def;
     b2ShapeId shapeId;  
-    float2 p1;
-    float2 p2;
+    b2coord p1;
+    b2coord p2;
     float radius;
 }
 struct PolygonData {
     b2ShapeDef def;
     b2ShapeId shapeId;  
-    float2[] vertices;
+    b2coord[] vertices;
     float radius;
 }
 struct SegmentData {
     b2ShapeDef def;
     b2ShapeId shapeId;  
-    float2 p1;
-    float2 p2;
+    b2coord p1;
+    b2coord p2;
 }
 struct ChainSegmentData {
     b2ChainDef chainDef;
     b2ChainId chainId;
-    float2[] vertices;
+    b2coord[] vertices;
     uint[] renderIds;
 }
 union ShapeData {
@@ -160,90 +159,218 @@ union ShapeData {
     SegmentData segment;
     ChainSegmentData chainSegment;  
 }
+
+struct Joint {
+    b2JointId jointId;
+    Entity* entityA;
+    Entity* entityB;
+    b2coord localAnchorA;
+    b2coord localAnchorB;
+    uint renderId;
+}
+class Scene {
+    b2WorldId worldId;
+    float width;
+    float height;
+    Entity[] entities;
+    Joint[] joints;
+
+    this(b2WorldId worldId, float width, float height) {
+        this.worldId = worldId;
+        this.width = width;
+        this.height = height;
+    }
+}
 //──────────────────────────────────────────────────────────────────────────────────────────────────
 
-Entity[] createScene(b2WorldId worldId, float width, float height) {
+Scene createScene(b2WorldId worldId, float width, float height) {
+
+    Scene scene = new Scene(worldId, width, height);    
+    addGround(scene);
+    addBox(scene);
+    addCircle(scene);
+    addCapsule(scene);
+    addPolygon(scene);
+    addSegment(scene);
+    addChain(scene);
+    
+    addDistanceJoint(scene);
+
+    return scene;
+}
+void addGround(Scene scene) {
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = 1.0;
+    shapeDef.friction = 0.6f;
+
+    Entity e = {
+        name: "Ground",
+        pos: b2coord(scene.width / 2, 70),
+        rotationACW: 0.degrees
+    };
+    e.createBody(scene.worldId, staticBodyDef(e.pos, e.rotationACW));
+    e.addRectangleShape(shapeDef, float2(650.0f, 10.0f), RGBA(1,1,1,1));
+
+    scene.entities ~= e;
+}
+void addBox(Scene scene) {
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = 1.0;
+    shapeDef.friction = 0.6f;
+
+    Entity e = {
+        name: "Falling box",
+        pos: b2coord(scene.width / 2, 500.0f),
+        rotationACW: 25.degrees
+    };
+    e.createBody(scene.worldId, dynamicBodyDef(e.pos, e.rotationACW));
+    e.addRectangleShape(shapeDef, float2(40, 40), RGBA(0,1,0,1));
+   
+    scene.entities ~= e;
+}
+void addCircle(Scene scene) {
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = 1.0;
+    shapeDef.friction = 0.6f;
+
+    Entity e = {
+        name: "Falling circle",
+        pos: b2coord(scene.width / 2 + 200, 600.0f),
+        rotationACW: 0.degrees
+    };
+    e.createBody(scene.worldId, dynamicBodyDef(e.pos, e.rotationACW));
+    e.addCircleShape(shapeDef, 40, RGBA(0,1,1,1));
+   
+    scene.entities ~= e;
+}
+void addCapsule(Scene scene) {
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = 1.0;
+    shapeDef.friction = 0.6f;
+
+    Entity e = {
+        name: "Falling capsule",
+        pos: b2coord(scene.width/2 - 200, 900.0f),
+        rotationACW: 20.degrees
+    }; 
+    e.createBody(scene.worldId, dynamicBodyDef(e.pos, e.rotationACW));
+    e.addCapsuleShape(shapeDef, b2coord(0, -50), b2coord(0, 50), 50, RGBA(0.7, 0.5, 0.2,1));    
+
+    scene.entities ~= e;
+}
+void addPolygon(Scene scene) {
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = 1.0;
+    shapeDef.friction = 0.6f;
+
+    Entity e = {
+        name: "Falling polygon",
+        pos: b2coord(scene.width / 2 + 450, 600.0f),
+        rotationACW: 45.degrees
+    };
+    e.createBody(scene.worldId, dynamicBodyDef(e.pos, e.rotationACW));    
+    e.addPolygonShape(shapeDef, 
+        [
+            b2coord( 0.5, 0.7),   
+            b2coord(-0.5, 1),
+            b2coord(-1, 0), 
+            b2coord(-0.5, -1),
+            b2coord(0.5, -1),
+            b2coord(1, 0)     
+        ].map!(it=>it * b2coord(70, 70)).array,
+        RGBA(0.3,0.3,0.8,1),
+        0);    
+
+    scene.entities ~= e;
+}
+void addSegment(Scene scene) {
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = 1.0;
+    shapeDef.friction = 0.6f;
+
+    Entity e = {
+        name: "Segment 1",
+        pos: b2coord(scene.width / 2 + 350, 400.0f),
+        rotationACW: 0.degrees
+    };
+    e.createBody(scene.worldId, staticBodyDef(e.pos, e.rotationACW));
+    e.addSegmentShape(shapeDef, b2coord(-145,-40), b2coord(200,100), RGBA(0.8,0.3,0.8,1));
+
+    scene.entities ~= e;
+}
+void addChain(Scene scene) {
+    Entity e = {
+        name: "Chain",
+        pos: b2coord(scene.width / 2 + 150, 300.0f),
+        rotationACW: 0.degrees
+    };
+    e.createBody(scene.worldId, staticBodyDef(e.pos, e.rotationACW));
+
+    e.addChainSegmentShape(b2DefaultChainDef(), 
+        [
+            // only the right side of the chain will collide
+            b2coord(70,-60),     // ghost
+            b2coord(20,-80),
+            b2coord(-100,-50), 
+            b2coord(-200,-50), 
+            b2coord(-300,0),     // ghost
+        ].map!(it=>it + b2coord(-40, 0)).array,
+        RGBA(1, 0.5, 0.8, 1));    
+
+    scene.entities ~= e;    
+}
+void addDistanceJoint(Scene scene) {
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.density = 1.0;
     shapeDef.friction = 0.6f;
 
-    Entity ground = {
-        name: "Ground",
-        innerColour: RGBA(1,1,0,1)
-    };
-    ground.createBody(worldId, staticBodyDef(float2(width / 2, 70), 0.degrees));
-    ground.addRectangleShape(shapeDef, float2(650.0f, 10.0f));
-
-    Entity fallingBox = {
-        name: "Falling box",
-        innerColour: RGBA(0,1,0,1)
-    };
-    fallingBox.createBody(worldId, dynamicBodyDef(float2(width / 2, 500.0f), 25.degrees));
-    fallingBox.addRectangleShape(shapeDef, float2(40, 40));
-
-    Entity fallingCircle = {
-        name: "Falling circle",
-        innerColour: RGBA(0,1,1,1)
-    };
-    fallingCircle.createBody(worldId, dynamicBodyDef(float2(width / 2 + 200, 600.0f), 0.degrees));
-    fallingCircle.addCircleShape(shapeDef, 40);
-
-    Entity fallingCapsule = {
-        name: "Falling capsule",
-        innerColour: RGBA(0.7,0.1,0.8,1)
+    // Body A
+    Entity bodyA = {
+        name: "Body A",
+        pos: b2coord(200, 600),
+        rotationACW: 0.degrees
     }; 
-    fallingCapsule.createBody(worldId, dynamicBodyDef(float2(width / 2 - 300, 600.0f), 20.degrees));
-    fallingCapsule.addCapsuleShape(shapeDef, float2(0, -50), float2(0, 50), 50);    
+    bodyA.createBody(scene.worldId, dynamicBodyDef(bodyA.pos, bodyA.rotationACW));
+    bodyA.addCircleShape(shapeDef, 50, RGBA(0.7,0.1,0.8,1)); 
+    auto bodyAPtr = scene.entities.appendAndReturnPtr(bodyA);   
 
-    Entity fallingPolygon = {
-        name: "Falling polygon",
-        innerColour: RGBA(0.3,0.3,0.8,1)
-    };
-    fallingPolygon.createBody(worldId, dynamicBodyDef(float2(width / 2 + 450, 600.0f), 45.degrees));    
-    fallingPolygon.addPolygonShape(shapeDef, [
-            float2( 0.5, 0.7),   
-            float2(-0.5, 1),
-            float2(-1, 0), 
-            float2(-0.5, -1),
-            float2(0.5, -1),
-            float2(1, 0)     
-        ].map!(it=>it * float2(70, 70)).array,
-        0);    
+    // Body B
+    Entity bodyB = {
+        name: "Body B",
+        pos: b2coord(400, 600),
+        rotationACW: 0.degrees
+    }; 
+    bodyB.createBody(scene.worldId, dynamicBodyDef(bodyB.pos, bodyB.rotationACW));
+    bodyB.addCircleShape(shapeDef, 50, RGBA(0.1,0.7,0.8,1));
+    auto bodyBPtr = scene.entities.appendAndReturnPtr(bodyB); 
 
-    Entity segment = {
-        name: "Segment 1",
-        innerColour: RGBA(0.8,0.3,0.8,1)
-    };
-    segment.createBody(worldId, staticBodyDef(float2(width / 2 + 350, 300.0f)));
-    segment.addSegmentShape(shapeDef, float2(-145,-40), float2(200,100));
+    // Distance joint
+    b2DistanceJointDef jointDef = b2DefaultDistanceJointDef();
+    jointDef.bodyIdA = bodyA.bodyId;
+    jointDef.bodyIdB = bodyB.bodyId;
+    jointDef.localAnchorA = b2Vec2(0,0);
+    jointDef.localAnchorB = b2Vec2(0,0);
+    float2 anchorA = b2Body_GetWorldPoint(bodyA.bodyId, jointDef.localAnchorA).as!float2;
+    float2 anchorB = b2Body_GetWorldPoint(bodyB.bodyId, jointDef.localAnchorB).as!float2;
+    jointDef.length = (anchorB - anchorA).length();
+    jointDef.collideConnected = false;
+    // jointDef.minLength = 100;
+    // jointDef.maxLength = 200;
+    // jointDef.stiffness = 100;
+    // jointDef.damping = 10;
+    // jointDef.enableSpring = false;
+    // jointDef.hertz = 10;
 
-    //segment.addSegmentShape(shapeDef, float2(0,0), float2(200,100));
+    b2JointId jointId = b2CreateDistanceJoint(scene.worldId, &jointDef);
 
+    auto jointPtr = scene.joints.appendAndReturnPtr(Joint(
+        jointId, 
+        bodyAPtr, 
+        bodyBPtr, 
+        jointDef.localAnchorA.as!b2coord, 
+        jointDef.localAnchorB.as!b2coord));
 
-    Entity chain = {
-        name: "Chain",
-        innerColour: RGBA(1, 0.5, 0.8, 1)
-    };
-    chain.createBody(worldId, staticBodyDef(float2(width / 2 + 150, 300.0f)));
-
-    chain.addChainSegmentShape(b2DefaultChainDef(), 
-        [
-            // only the right side of the chain will collide
-            float2(70,-60),     // ghost
-            float2(20,-80),
-            float2(-100,-50), 
-            float2(-200,-50), 
-            float2(-300,0),     // ghost
-        ].map!(it=>it + float2(-40, 0)).array);    
-
-    return [
-        ground, 
-        fallingBox, 
-        fallingCircle, 
-        fallingCapsule,
-        fallingPolygon,
-        segment,
-        chain
-    ];
+    bodyAPtr.joints ~= jointPtr;
+    bodyBPtr.joints ~= jointPtr;
 }

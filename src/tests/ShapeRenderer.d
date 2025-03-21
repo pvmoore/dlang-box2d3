@@ -27,19 +27,40 @@ public:
         });
         return this;
     }
-    uint addRectangle(float2 pos, float2 size, Angle!float rotationACW, RGBA innerColour) {
-        return addShape(ShapeType.RECTANGLE, pos, size, rotationACW, innerColour);
+    /**
+     *  Add a rectangle to the renderer.
+     *  pos is in Box2D coordinates (0,0 is at the bottom left of the screen)
+     */
+    uint addRectangle(b2coord pos, float2 size, Angle!float rotationACW, RGBA innerColour) {
+        float2 pos2 = float2(pos.x, context.vk.windowSize().to!float.y - pos.y);
+        return addShape(ShapeType.RECTANGLE, pos2, size, rotationACW, innerColour);
     }
-    uint addCircle(float2 pos, float radius, Angle!float rotationACW, RGBA innerColour) {
-        return addShape(ShapeType.CIRCLE, pos, float2(radius), rotationACW, innerColour);
+    /**
+     *  Add a circle to the renderer.
+     *  pos is in Box2D coordinates (0,0 is at the bottom left of the screen)
+     */
+    uint addCircle(b2coord pos, float radius, Angle!float rotationACW, RGBA innerColour) {
+        float2 pos2 = float2(pos.x, context.vk.windowSize().to!float.y - pos.y);
+        return addShape(ShapeType.CIRCLE, pos2, float2(radius), rotationACW, innerColour);
     }
-    uint addCapsule(float2 pos, float height, float radius, Angle!float rotationACW, RGBA innerColour) {
+    /**
+     *  Add a capsule to the renderer.
+     *  pos is in Box2D coordinates (0,0 is at the bottom left of the screen)
+     */
+    uint addCapsule(b2coord pos, float height, float radius, Angle!float rotationACW, RGBA innerColour) {
         throwIf(height < radius, "Height must be greater than radius");
-        return addShape(ShapeType.CAPSULE, pos, float2(radius, height), rotationACW, innerColour);
+        float2 pos2 = float2(pos.x, context.vk.windowSize().to!float.y - pos.y);
+        return addShape(ShapeType.CAPSULE, pos2, float2(radius, height), rotationACW, innerColour);
     }
-    uint addPolygon(float2 pos, float radius, float2[] vertices, Angle!float rotationACW, RGBA innerColour) {
+    /**
+     *  Add a polygon to the renderer.
+     *  pos and vertices are in Box2D coordinates (0,0 is at the bottom left of the screen)
+     */
+    uint addPolygon(b2coord pos, float radius, b2coord[] vertices, Angle!float rotationACW, RGBA innerColour) {
         throwIf(vertices.length < 3, "Must have at least 3 vertices");
         throwIf(vertices.length > MAX_POLYGON_VERTICES, "Max number of vertices is %s", MAX_POLYGON_VERTICES);
+
+        float2 pos2 = float2(pos.x, context.vk.windowSize().to!float.y - pos.y);
 
         // Calculate the render quad size.
         // Normalise vertices to fit into the -1 to +1 range 
@@ -48,8 +69,8 @@ public:
         float2 minimum = float2(float.max);
 
         foreach(v; vertices) {
-            maximum = maximum.max(v);
-            minimum = minimum.min(v);
+            maximum = maximum.max(v.as!float2);
+            minimum = minimum.min(v.as!float2);
         }
         float2 size = (maximum - minimum) / 2;
 
@@ -60,8 +81,9 @@ public:
         ptr[0] = float2(vertices.length.as!float, radius);
 
         // Write the vertices
-        foreach(i; 0..MAX_POLYGON_VERTICES) {
-            float2 v = i < vertices.length ? vertices[i] : float2(1);
+        foreach(i; 0..vertices.length) {
+            float2 v = vertices[i].as!float2;
+
             // Swap y to convert from Box2D coordinates to Vulkan
             v = float2(v.x, -v.y);
 
@@ -70,38 +92,77 @@ public:
         }
         staticVertices.setDirtyRange(numShapes*STATIC_DATA_PER_SHAPE, numShapes*STATIC_DATA_PER_SHAPE+1);
         
-        return addShape(ShapeType.POLYGON, pos, size, rotationACW, innerColour);
+        return addShape(ShapeType.POLYGON, pos2, size, rotationACW, innerColour);
     }
-    auto addSegment(float2 pos, float2 p1, float2 p2, RGBA innerColour, bool isGhost) {
+    /**  
+     *  Add a segment to the renderer.
+     *  p1 and p2 are in Box2D coordinates (0,0 is at the bottom left of the screen)
+     */
+    auto addSegment(b2coord p1, b2coord p2, RGBA innerColour, bool isGhost, bool isJoint) {
 
         // Add isGhost to the static buffer
         float2* ptr = staticVertices.map() + (numShapes*STATIC_DATA_PER_SHAPE);
-        ptr[0] = float2(isGhost ? 1 : 0, 0);
+        ptr[0] = float2(isGhost ? 1 : 0, isJoint ? 1 : 0);
+
+        float2 v         = p2.as!float2 - p1.as!float2;
+        float length     = v.length();
+        float2 centre    = p1.as!float2 + v*0.5;
+        auto rotation    = v.angle();
+
+        // Convert to Vulkan coordinates (0,0 is at the top left of the screen)
+        float screenY = context.vk.windowSize().to!float.y;
+        centre.y = screenY - centre.y;
 
         // Create a vertical rectangle bounding box (width=5, height=half length)
-        float length     = (p2-p1).length();
-        float2 centre    = (p1 + p2) / 2;
-        auto rotation    = (p2-p1).angle();
-        float2 rect = float2(5, length/2);        
+        float2 rect = float2(5, length/2);    
 
-        // Swap y
-        centre.y = -centre.y;
-
-        return addShape(ShapeType.SEGMENT, pos+centre, rect, rotation, innerColour);
+        return addShape(ShapeType.SEGMENT, centre, rect, rotation, innerColour);
     }
-    /** Move a shape to a new position and rotation */
-    auto moveShape(uint id, float2 newPos, Angle!float newRotation, bool isAwake) {
+    /** 
+     *  Move a joint segment to a new position 
+     *  p1 and p2 are in Box2D coordinates (0,0 is at the bottom left of the screen)
+     */
+    auto moveJoint(uint id, b2coord p1, b2coord p2) {
         throwIf(id >= numShapes);
 
-        float2 pos = float2(newPos.x, context.vk.windowSize().to!float.y - newPos.y);
-        float radians = newRotation.radians;
+        float2 v         = p2.as!float2 - p1.as!float2;
+        float length     = v.length();
+        float2 centre    = p1.as!float2 + v*0.5;
+        auto rotation    = v.angle();
+
+        float screenY = context.vk.windowSize().to!float.y;
+        centre.y = screenY - centre.y;
+
+        float2 rect = float2(5, length/2); 
+
+        Vertex* ptr = vertices.map() + (id*6);
+
+        foreach(i; 0..6) {
+            ptr[i].translation = centre;
+            ptr[i].size        = rect;
+            ptr[i].rotation    = rotation.radians;
+        }
+        vertices.setDirtyRange(id, id+1);
+
+        return this;
+    }
+    /** 
+     *  Move a shape to a new position and rotation 
+     *  newPos is in Box2D coordinates (0,0 is at the bottom left of the screen)
+     */
+    auto moveShape(uint id, b2coord newPos, Angle!float newRotation, bool isAwake) {
+        throwIf(id >= numShapes);
+
+        // Convert to Vulkan coordinates (0,0 is at the top left of the screen)
+        float screenY = context.vk.windowSize().to!float.y;
+        float2 pos = float2(newPos.x, screenY - newPos.y);
 
         Vertex* ptr = vertices.map() + (id*6);
 
         foreach(i; 0..6) {
             ptr[i].translation = pos;
-            ptr[i].rotation = radians;
-            ptr[i].isAwake = isAwake ? 1 : 0;
+            ptr[i].rotation    = newRotation.radians;
+            ptr[i].isAwake     = isAwake ? 1 : 0;
         }
 
         vertices.setDirtyRange(id, id+1);
