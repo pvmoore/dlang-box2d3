@@ -200,6 +200,9 @@ Scene createScene(b2WorldId worldId, float width, float height) {
     addDistanceJoint(scene, b2coord(0,0), false);
     addDistanceJoint(scene, b2coord(200,200), true);
 
+    addRevoluteJoint(scene, b2coord(400,0), false);
+    addRevoluteJoint(scene, b2coord(500,200), true);
+
     return scene;
 }
 void addGround(Scene scene) {
@@ -330,8 +333,8 @@ void addDistanceJoint(Scene scene, b2coord pos, bool spring) {
     shapeDef.friction = 0.6f;
 
     RGBA[2] colours = [
-        RGBA(0.5, uniform01(), 0.5, 1), 
-        RGBA(uniform01(), 0.5, 0.5, 1)
+        RGBA(0.9, uniform01(), 0.5, 1), 
+        RGBA(uniform01(), 0.9, 0.5, 1)
     ];
 
     // Body A
@@ -360,6 +363,7 @@ void addDistanceJoint(Scene scene, b2coord pos, bool spring) {
     jointDef.bodyIdB = bodyB.bodyId;
     jointDef.localAnchorA = b2Vec2(0,0);
     jointDef.localAnchorB = b2Vec2(0,0);
+
     float2 anchorA = b2Body_GetWorldPoint(bodyA.bodyId, jointDef.localAnchorA).as!float2;
     float2 anchorB = b2Body_GetWorldPoint(bodyB.bodyId, jointDef.localAnchorB).as!float2;
     jointDef.length = (anchorB - anchorA).length();
@@ -374,6 +378,73 @@ void addDistanceJoint(Scene scene, b2coord pos, bool spring) {
     }
 
     b2JointId jointId = b2CreateDistanceJoint(scene.worldId, &jointDef);
+
+    uint jointIndex = scene.joints.length.as!uint;
+    bodyAPtr.jointIndexes ~= jointIndex;
+    bodyBPtr.jointIndexes ~= jointIndex;
+
+    scene.joints ~= Joint(
+        jointId, 
+        bodyAPtr, 
+        bodyBPtr, 
+        jointDef.localAnchorA.as!b2coord, 
+        jointDef.localAnchorB.as!b2coord);
+}
+void addRevoluteJoint(Scene scene, b2coord pos, bool spring) {
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = 1.0;
+    shapeDef.friction = 0.6f;
+
+    RGBA[2] colours = [
+        RGBA(uniform01(), 0.5, 0.5, 1), 
+        RGBA(0.9, 0.5, uniform01(), 1)
+    ];
+
+    b2coord posA      = pos + b2coord(800, 900);
+    b2coord posB      = posA + b2coord(50, 50);
+    b2Vec2 worldPivot = (posB + b2coord(0, 0)).as!b2Vec2;
+
+    // Body A
+    Entity bodyA = {
+        name: "Body A - revolute",
+        pos: posA,
+        rotationACW: 0.degrees
+    }; 
+    bodyA.createBody(scene.worldId, dynamicBodyDef(bodyA.pos, bodyA.rotationACW));
+    bodyA.addCircleShape(shapeDef, 70, colours[0]); 
+    auto bodyAPtr = scene.entities.appendAndReturnPtr(bodyA);   
+
+    // Body B
+    Entity bodyB = {
+        name: "Body B - revolute",
+        pos: posB,
+        rotationACW: 0.degrees
+    }; 
+    bodyB.createBody(scene.worldId, dynamicBodyDef(bodyB.pos, bodyB.rotationACW));
+    bodyB.addRectangleShape(shapeDef, float2(60,40), colours[1]);    
+    auto bodyBPtr = scene.entities.appendAndReturnPtr(bodyB); 
+
+
+    b2RevoluteJointDef jointDef = b2DefaultRevoluteJointDef();
+    jointDef.bodyIdA = bodyA.bodyId;
+    jointDef.bodyIdB = bodyB.bodyId;
+    jointDef.localAnchorA = b2Body_GetLocalPoint(bodyA.bodyId, worldPivot);
+    jointDef.localAnchorB = b2Body_GetLocalPoint(bodyB.bodyId, worldPivot);
+
+    jointDef.referenceAngle = 0;
+    jointDef.lowerAngle     = -0.5 * 3.14159265359f;
+    jointDef.upperAngle     = 0.25 * 3.14159265359f;
+    jointDef.enableLimit    = true;
+    
+    jointDef.collideConnected = false;
+    
+    if(spring) {
+        jointDef.enableSpring = true;
+        jointDef.dampingRatio = 0.01;
+        jointDef.hertz        = 1.0;
+    }
+
+    b2JointId jointId = b2CreateRevoluteJoint(scene.worldId, &jointDef);
 
     uint jointIndex = scene.joints.length.as!uint;
     bodyAPtr.jointIndexes ~= jointIndex;
