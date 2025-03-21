@@ -4,6 +4,7 @@ import box2d3;
 import vulkan        : RGBA;
 import std.algorithm : map;
 import std.range     : array;
+import std.random    : uniform01;
 
 enum { 
     SIMULATION_SPEED = 1.0 * 0.1,
@@ -22,7 +23,9 @@ struct Entity {
 
     // Shape properties
     Shape[] shapes;
-    Joint*[] joints;
+
+    // Indexes into the Scene.joints array for Joints that are connected to this Entity
+    uint[] jointIndexes;
 
     void createBody(b2WorldId worldId, b2BodyDef def) {
         this.type = def.type;
@@ -194,7 +197,8 @@ Scene createScene(b2WorldId worldId, float width, float height) {
     addSegment(scene);
     addChain(scene);
     
-    addDistanceJoint(scene);
+    addDistanceJoint(scene, b2coord(0,0), false);
+    addDistanceJoint(scene, b2coord(200,200), true);
 
     return scene;
 }
@@ -250,7 +254,7 @@ void addCapsule(Scene scene) {
 
     Entity e = {
         name: "Falling capsule",
-        pos: b2coord(scene.width/2 - 200, 900.0f),
+        pos: b2coord(scene.width/2 - 50, 900.0f),
         rotationACW: 20.degrees
     }; 
     e.createBody(scene.worldId, dynamicBodyDef(e.pos, e.rotationACW));
@@ -319,30 +323,35 @@ void addChain(Scene scene) {
 
     scene.entities ~= e;    
 }
-void addDistanceJoint(Scene scene) {
+void addDistanceJoint(Scene scene, b2coord pos, bool spring) {
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.density = 1.0;
     shapeDef.friction = 0.6f;
 
+    RGBA[2] colours = [
+        RGBA(0.5, uniform01(), 0.5, 1), 
+        RGBA(uniform01(), 0.5, 0.5, 1)
+    ];
+
     // Body A
     Entity bodyA = {
         name: "Body A",
-        pos: b2coord(200, 600),
+        pos: pos + b2coord(400, 600),
         rotationACW: 0.degrees
     }; 
     bodyA.createBody(scene.worldId, dynamicBodyDef(bodyA.pos, bodyA.rotationACW));
-    bodyA.addCircleShape(shapeDef, 50, RGBA(0.7,0.1,0.8,1)); 
+    bodyA.addCircleShape(shapeDef, 50, colours[0]); 
     auto bodyAPtr = scene.entities.appendAndReturnPtr(bodyA);   
 
     // Body B
     Entity bodyB = {
         name: "Body B",
-        pos: b2coord(400, 600),
+        pos: pos + b2coord(500, 800),
         rotationACW: 0.degrees
     }; 
     bodyB.createBody(scene.worldId, dynamicBodyDef(bodyB.pos, bodyB.rotationACW));
-    bodyB.addCircleShape(shapeDef, 50, RGBA(0.1,0.7,0.8,1));
+    bodyB.addCircleShape(shapeDef, 50, colours[1]);    
     auto bodyBPtr = scene.entities.appendAndReturnPtr(bodyB); 
 
     // Distance joint
@@ -355,22 +364,25 @@ void addDistanceJoint(Scene scene) {
     float2 anchorB = b2Body_GetWorldPoint(bodyB.bodyId, jointDef.localAnchorB).as!float2;
     jointDef.length = (anchorB - anchorA).length();
     jointDef.collideConnected = false;
-    // jointDef.minLength = 100;
-    // jointDef.maxLength = 200;
-    // jointDef.stiffness = 100;
-    // jointDef.damping = 10;
-    // jointDef.enableSpring = false;
-    // jointDef.hertz = 10;
+
+    if(spring) {
+        jointDef.enableSpring = true;
+        jointDef.dampingRatio = 0.05;
+        jointDef.hertz        = 1.0;
+        jointDef.minLength    = 0;
+        jointDef.maxLength    = jointDef.length + 100;
+    }
 
     b2JointId jointId = b2CreateDistanceJoint(scene.worldId, &jointDef);
 
-    auto jointPtr = scene.joints.appendAndReturnPtr(Joint(
+    uint jointIndex = scene.joints.length.as!uint;
+    bodyAPtr.jointIndexes ~= jointIndex;
+    bodyBPtr.jointIndexes ~= jointIndex;
+
+    scene.joints ~= Joint(
         jointId, 
         bodyAPtr, 
         bodyBPtr, 
         jointDef.localAnchorA.as!b2coord, 
-        jointDef.localAnchorB.as!b2coord));
-
-    bodyAPtr.joints ~= jointPtr;
-    bodyBPtr.joints ~= jointPtr;
+        jointDef.localAnchorB.as!b2coord);
 }

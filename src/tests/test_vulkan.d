@@ -198,68 +198,6 @@ private:
         this.shapeRenderer = new ShapeRenderer(context, 1000)
             .camera(camera);
 
-        static if(false) {
-            float2 pos = float2(200, 200);
-            float height = 150;
-            float radius = 100;
-
-            shapeRenderer.addCapsule(pos, height*2, radius*2, 0.degrees, RGBA(0,1,1,1));    
-        }
-
-        static if(false) {
-            float2[] points = [
-                float2( 0.5, 0.7),    // 0.5, 1 
-                float2(-0.5, 1),
-                float2(-1, 0), 
-                float2(-0.5, -1),
-                float2(0.5, -1),
-                float2(1, 0)
-            ];
-
-            float2 pos = float2(200, 200);
-            float2 size = float2(100, 100);
-            float radius = 0;
-            shapeRenderer.addPolygon(pos, size, radius, points, 0.degrees, RGBA(0,1,0,1));
-            
-            
-        }
-
-        static if(false) {   
-            foreach(i; 0..25) {
-                float size = uniform(0, (i+1)*20) + 3;
-                float2 pos = float2(
-                    uniform(0, vk.windowSize.width()), 
-                    uniform(0, vk.windowSize.height()));
-                RGBA inner = RGBA(uniform(0,1f), uniform(0,1f), uniform(0,1f), 1);
-                RGBA outer = RGBA(1,1,1,1);
-                auto rotation = uniform(0,360).degrees;
-
-                this.shapeRenderer.addRectangle(
-                    pos, 
-                    float2(size, size), 
-                    rotation, 
-                    inner, 
-                    outer);
-            }
-
-            foreach(i; 0..25) {
-                float size = uniform(0, (i+1)*20) + 3;
-                float2 pos = float2(
-                    uniform(0, vk.windowSize.width()), 
-                    uniform(0, vk.windowSize.height()));
-                RGBA inner = RGBA(uniform(0,1f), uniform(0,1f), uniform(0,1f), 1);
-                RGBA outer = RGBA(1,1,1,1);
-                auto rotation = uniform(0,360).degrees;
-
-                this.shapeRenderer.addCircle(
-                    pos, 
-                    size, 
-                    rotation, 
-                    inner, 
-                    outer);
-            }
-
-        }
         this.bgColour = clearColour(0.0f, 0, 0, 1);
 
         createPhysicsScene();
@@ -374,12 +312,13 @@ private:
     void createRenderJoints() {
 
         foreach(ref j; scene.joints) {
+
             auto anchorA = b2Body_GetWorldPoint(j.entityA.bodyId, j.localAnchorA.as!b2Vec2).as!b2coord;
             auto anchorB = b2Body_GetWorldPoint(j.entityB.bodyId, j.localAnchorB.as!b2Vec2).as!b2coord;
             j.renderId = shapeRenderer.addSegment(
                 anchorA,
                 anchorB,
-                RGBA(1,1,1,1), false, true);  
+                RGBA(1,1,1,1), false, true);        
         }
     }
 
@@ -415,7 +354,8 @@ private:
             }
 
             // Update joints
-            foreach(j; entity.joints) {
+            foreach(ji; entity.jointIndexes) {
+                auto j = scene.joints[ji];
                 auto anchorA = b2Body_GetWorldPoint(j.entityA.bodyId, j.localAnchorA.as!b2Vec2).as!b2coord;
                 auto anchorB = b2Body_GetWorldPoint(j.entityB.bodyId, j.localAnchorB.as!b2Vec2).as!b2coord;
                 uint renderId = j.renderId;
