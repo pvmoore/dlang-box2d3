@@ -1,6 +1,6 @@
 module tests.ShapeRenderer;
 
-import vulkan.all;
+import vulkan;
 import box2d3;
 import std.math : abs;
 

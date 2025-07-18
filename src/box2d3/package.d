@@ -3,6 +3,9 @@ module box2d3;
 public:
 
 import common;
+import common.utils;
+import common.io;
+
 import maths;
 import logging;
 

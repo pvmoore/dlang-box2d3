@@ -5,6 +5,7 @@ import vulkan        : RGBA;
 import std.algorithm : map;
 import std.range     : array;
 import std.random    : uniform01;
+import std.format    : format;
 
 enum { 
     SIMULATION_SPEED = 1.0 * 0.5,

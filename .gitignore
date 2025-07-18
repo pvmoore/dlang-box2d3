@@ -4,6 +4,7 @@ bin/
 .out/
 .bin/
 .idea/
+.cache/
 *.iml
 
 .dub/
