@@ -107,9 +107,6 @@ public:
         this.device = device;
         initScene();
     }
-    override void selectFeatures(DeviceFeatures deviceFeatures) {
-        super.selectFeatures(deviceFeatures);
-    }
     void update(Frame frame) {
         updatePhysics(frame);
         updateRenderer(frame);
